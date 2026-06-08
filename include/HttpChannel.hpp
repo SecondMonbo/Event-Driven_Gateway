@@ -31,8 +31,10 @@ private:
     bool parse_header_line(const std::string &line);
     bool parse_body(std::string &buffer);
     std::string generate_response();
-    void send_error_response(int fd, int status_code);
+    std::string generate_error_response(int status_code);
     void reset();
+    std::string get_mime_type(const std::string &path);
+    std::string get_executable_dir();
 };
 
 #endif

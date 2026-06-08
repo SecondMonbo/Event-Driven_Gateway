@@ -4,6 +4,9 @@
 #include <cctype>
 #include <unistd.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
+#include <fstream>
+#include <limits.h>
 
 bool HttpChannel::extract_line(std::string &buffer, std::string &line)
 {
@@ -79,19 +82,97 @@ bool HttpChannel::parse_body(std::string &buffer)
     }
 }
 
-void HttpChannel::send_error_response(int fd, int status_code)
+std::string HttpChannel::get_executable_dir()
 {
-    std::string body = "<h1>Error</h1>";
-    std::string response = "HTTP/1.1 " + std::to_string(status_code) + " Bad Request\r\n"
-                                                                       "Content-Length: " +
+    char result[PATH_MAX];
+    ssize_t count = readlink("/proc/self/exe", result, PATH_MAX);
+    if (count == -1)
+        return ".";
+    std::string exe_path(result, count);
+    return exe_path.substr(0, exe_path.rfind('/'));
+}
+
+std::string HttpChannel::generate_error_response(int status_code)
+{
+
+    std::string status_text;
+    switch (status_code)
+    {
+    case 400:
+        status_text = "Bad Request";
+        break;
+    case 404:
+        status_text = "Not Found";
+        break;
+    case 405:
+        status_text = "Method Not Allowed";
+        break;
+    case 500:
+        status_text = "Internal Server Error";
+        break;
+    default:
+        status_text = "Error";
+    }
+    std::string body = "<h1>" + status_text + "</h1>";
+    std::string response = "HTTP/1.1 " + std::to_string(status_code) + " " + status_text + "\r\n"
+                                                                                           "Content-Length: " +
                            std::to_string(body.size()) + "\r\n"
-                                                         "Connection: close\r\n\r\n" +
+                                                         "Connection: close\r\n"
+                                                         "\r\n" +
                            body;
-    send(fd, response.c_str(), response.size(), 0);
+    return response; // 返回完整的 HTTP 响应
+}
+
+std::string HttpChannel::get_mime_type(const std::string &path)
+{
+    static const std::unordered_map<std::string, std::string> mime_map = {
+        {".html", "text/html"},
+        {".css", "text/css"},
+        {".js", "application/javascript"},
+        {".png", "image/png"},
+        {".jpg", "image/jpeg"},
+        {".txt", "text/plain"}};
+    size_t dot = path.rfind('.');
+    if (dot == std::string::npos)
+        return "application/octet-stream";
+    std::string ext = path.substr(dot);
+    auto it = mime_map.find(ext);
+    if (it != mime_map.end())
+        return it->second;
+    return "application/octet-stream";
 }
 
 std::string HttpChannel::generate_response()
 {
+    if (method_ == "GET")
+    {
+        std::string base_dir = get_executable_dir() + "/../www";
+        std::string file_path = base_dir + path_;
+        if (path_ == "/")
+            file_path = base_dir + "/index.html";
+
+        struct stat st;
+        if (stat(file_path.c_str(), &st) == 0 && S_ISREG(st.st_mode))
+        {
+            std::string content_type = get_mime_type(file_path);
+            std::ifstream file(file_path, std::ios::binary);
+            std::string body((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>()); // 多加一层括号，避免Most Vexing Parse，明确是一个对象构造
+            std::string response = "HTTP/1.1 200 OK\r\n"
+                                   "Content-Type: " +
+                                   content_type + "\r\n"
+                                                  "Content-Length: " +
+                                   std::to_string(body.size()) + "\r\n"
+                                                                 "Connection: close\r\n"
+                                                                 "\r\n" +
+                                   body;
+            return response;
+        }
+        else
+        {
+            return generate_error_response(404);
+        }
+    }
+
     std::string body = "Hello, HTTP!";
     if (method_ == "POST")
     {
@@ -131,7 +212,7 @@ bool HttpChannel::process(int client_fd, std::string &read_buffer)
                 return false;
             if (!parse_request_line(line))
             {
-                send_error_response(client_fd, 400);
+
                 return true;
             }
             state_ = PARSE_HEADERS;
@@ -152,7 +233,8 @@ bool HttpChannel::process(int client_fd, std::string &read_buffer)
             }
             if (!parse_header_line(line))
             {
-                send_error_response(client_fd, 400);
+                std::string error_reponse = generate_error_response(400);
+                send(client_fd, error_reponse.c_str(), sizeof(error_reponse), 0);
                 return true;
             }
             break;
