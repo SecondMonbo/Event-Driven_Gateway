@@ -1,0 +1,13 @@
+# 编译输出
+build/
+*.o
+*.exe
+gateway
+*.out
+
+.vscode/
+
+# 临时文件
+*.swp
+*.tmp
+*.log
