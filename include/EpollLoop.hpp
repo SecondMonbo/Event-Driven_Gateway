@@ -1,7 +1,7 @@
 #ifndef EPOLL_LOOP_HPP
 #define EPOLL_LOOP_HPP
 
-#include <map>
+#include <unordered_map>
 #include <sys/epoll.h>
 #include "ThreadPool.hpp"
 
@@ -16,6 +16,15 @@ public:
     bool init(int port);
     void run();
 
+    // 提交异步任务，回调在主线程执行
+    template <typename Task, typename Callback>
+    void submit_async(Task &&task, Callback &&callback)
+    {
+        thread_pool_.enqueue_with_callback(std::forward<Task>(task), std::forward<Callback>(callback));
+    }
+
+    ThreadPool &get_thread_pool() { return thread_pool_; }
+
 private:
     void add_fd(int fd, uint32_t events);
     void remove_fd(int fd);
@@ -25,7 +34,7 @@ private:
 
     int epfd_;
     int listen_fd_;
-    std::map<int, ClientConnection *> connections_;
+    std::unordered_map<int, std::shared_ptr<ClientConnection>> connections_;
     static const int MAX_EVENTS = 1024;
 
     ThreadPool thread_pool_;

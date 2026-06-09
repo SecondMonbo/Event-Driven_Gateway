@@ -8,6 +8,11 @@
 #include <fstream>
 #include <limits.h>
 
+HttpChannel::HttpChannel(ThreadPool &tp) : thread_pool_(tp)
+{
+    // 其他成员使用类内初始化器，无需显式初始化
+}
+
 bool HttpChannel::extract_line(std::string &buffer, std::string &line)
 {
     size_t pos = buffer.find("\r\n");

@@ -3,10 +3,17 @@
 
 #include <string>
 #include <unordered_map>
+#include <memory>
+
+class ClientConnection;
+class ThreadPool;
 
 class HttpChannel
 {
 public:
+    HttpChannel(ThreadPool &tp); // 线程池集成新增
+    ~HttpChannel() = default;
+
     bool process(int client_fd, std::string &read_buffer);
 
 private:
@@ -25,6 +32,8 @@ private:
     std::unordered_map<std::string, std::string> headers_;
     std::string body_;
     int content_length_ = 0;
+
+    ThreadPool &thread_pool_; // 引用
 
     bool extract_line(std::string &buffer, std::string &line);
     bool parse_request_line(const std::string &line);

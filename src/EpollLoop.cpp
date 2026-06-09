@@ -25,8 +25,7 @@ EpollLoop::~EpollLoop()
         close(epfd_);
     if (listen_fd_ != -1)
         close(listen_fd_);
-    for (auto &p : connections_)
-        delete p.second;
+
     connections_.clear();
 }
 
@@ -117,7 +116,7 @@ void EpollLoop::handle_accept()
         add_fd(client_fd, EPOLLIN | EPOLLET);
 
         static int next_id = 1;
-        ClientConnection *conn = new ClientConnection(client_fd, next_id++);
+        auto conn = std::make_shared<ClientConnection>(client_fd, next_id++, thread_pool_);
         connections_[client_fd] = conn;
 
         std::cout << "New connection fd=" << client_fd << ", id=" << conn->id() << std::endl;
@@ -130,7 +129,7 @@ void EpollLoop::handle_read(int fd)
     if (it == connections_.end())
         return;
 
-    ClientConnection *conn = it->second;
+    auto conn = it->second; // 改为shared_ptr
     bool need_delete = conn->on_readable();
 
     if (need_delete)
@@ -144,7 +143,6 @@ void EpollLoop::remove_connection(int fd)
     auto it = connections_.find(fd);
     if (it != connections_.end())
     {
-        delete it->second;
         connections_.erase(it);
         remove_fd(fd);
         // 注意：ClientConnection 析构时会 close(fd)

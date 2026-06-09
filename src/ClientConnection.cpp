@@ -7,9 +7,13 @@
 #include <iostream>
 #include <sys/socket.h>
 
-ClientConnection::ClientConnection(int fd, int id) : fd_(fd), conn_id_(id) {}
+ClientConnection::ClientConnection(int fd, int id, ThreadPool &tp) : fd_(fd), conn_id_(id), thread_pool_(tp) {}
 
-ClientConnection::~ClientConnection() = default;
+ClientConnection::~ClientConnection()
+{
+    if (fd_ != -1)
+        close(fd_);
+}
 
 bool ClientConnection::on_readable()
 {
@@ -52,7 +56,7 @@ bool ClientConnection::on_readable()
         if (read_buffer_.find("GET ") == 0 || read_buffer_.find("POST ") == 0 ||
             read_buffer_.find("PUT ") == 0 || read_buffer_.find("HEAD ") == 0)
         {
-            http_channel_ = std::make_unique<HttpChannel>();
+            http_channel_ = std::make_unique<HttpChannel>(thread_pool_);
         }
     }
 
