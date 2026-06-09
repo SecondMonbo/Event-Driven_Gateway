@@ -9,3 +9,7 @@ include_directories(include)
 file(GLOB SOURCES "src/*.cpp")
 
 add_executable(gateway ${SOURCES})
+
+add_executable(test_threadpool test/test_threadpool.cpp src/ThreadPool.cpp)
+target_link_libraries(test_threadpool pthread)
+target_include_directories(test_threadpool PRIVATE include)

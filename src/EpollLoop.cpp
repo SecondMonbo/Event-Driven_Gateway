@@ -17,7 +17,7 @@ static int set_nonblocking(int fd)
     return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 }
 
-EpollLoop::EpollLoop() : epfd_(-1), listen_fd_(-1) {}
+EpollLoop::EpollLoop() : epfd_(-1), listen_fd_(-1), thread_pool_(4) {}
 
 EpollLoop::~EpollLoop()
 {
@@ -174,5 +174,6 @@ void EpollLoop::run()
                 handle_read(fd);
             }
         }
+        thread_pool_.process_completions();
     }
 }

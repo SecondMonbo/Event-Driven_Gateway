@@ -3,6 +3,7 @@
 
 #include <map>
 #include <sys/epoll.h>
+#include "ThreadPool.hpp"
 
 class ClientConnection;
 
@@ -26,6 +27,8 @@ private:
     int listen_fd_;
     std::map<int, ClientConnection *> connections_;
     static const int MAX_EVENTS = 1024;
+
+    ThreadPool thread_pool_;
 };
 
 #endif
