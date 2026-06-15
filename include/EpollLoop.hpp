@@ -16,6 +16,9 @@ public:
     bool init(int port);
     void run();
 
+    void add_write_event(int fd);    // 为实现写缓冲区提供，
+    void remove_write_event(int fd); // 为链接注册EPOLLOUT;
+
     // 提交异步任务，回调在主线程执行
     template <typename Task, typename Callback>
     void submit_async(Task &&task, Callback &&callback)
@@ -35,6 +38,7 @@ private:
     int epfd_;
     int listen_fd_;
     std::unordered_map<int, std::shared_ptr<ClientConnection>> connections_;
+    std::unordered_map<int, uint32_t> fd_events_;
     static const int MAX_EVENTS = 1024;
 
     ThreadPool thread_pool_;

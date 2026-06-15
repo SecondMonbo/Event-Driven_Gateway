@@ -116,8 +116,9 @@ void EpollLoop::handle_accept()
         add_fd(client_fd, EPOLLIN | EPOLLET);
 
         static int next_id = 1;
-        auto conn = std::make_shared<ClientConnection>(client_fd, next_id++, thread_pool_);
+        auto conn = std::make_shared<ClientConnection>(client_fd, next_id++, thread_pool_, this);
         connections_[client_fd] = conn;
+        fd_events_[client_fd] = EPOLLIN | EPOLLET;
 
         std::cout << "New connection fd=" << client_fd << ", id=" << conn->id() << std::endl;
     }
@@ -167,11 +168,51 @@ void EpollLoop::run()
             {
                 handle_accept();
             }
-            else if (events[i].events & EPOLLIN)
+            if (events[i].events & EPOLLIN)
             {
                 handle_read(fd);
+            }
+            if (events[i].events & EPOLLOUT)
+            {
+                auto it = connections_.find(fd);
+                if (it != connections_.end())
+                {
+                    it->second->handle_write();
+                }
             }
         }
         thread_pool_.process_completions();
     }
+}
+
+void EpollLoop::add_write_event(int fd)
+{
+    uint32_t new_events = fd_events_[fd] | EPOLLOUT;
+    epoll_event ev;
+    ev.events = new_events;
+    ev.data.fd = fd;
+    if (epoll_ctl(epfd_, EPOLL_CTL_MOD, fd, &ev) < 0)
+    {
+
+        std::cerr << "epoll_ctl add_write_event";
+        return;
+    }
+
+    fd_events_[fd] = new_events;
+}
+
+void EpollLoop::remove_write_event(int fd)
+{
+    uint32_t new_events = fd_events_[fd] & ~EPOLLOUT;
+    if (new_events == 0)
+        return;
+    epoll_event ev;
+    ev.events = new_events;
+    ev.data.fd = fd;
+    if (epoll_ctl(epfd_, EPOLL_CTL_MOD, fd, &ev) < 0)
+    {
+        std::cerr << "epoll_ctl remove_write_event";
+        return;
+    }
+    fd_events_[fd] = new_events;
 }

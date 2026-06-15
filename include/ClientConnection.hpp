@@ -4,8 +4,9 @@
 #include <string>
 #include <memory>
 #include "ProtocolHandler.hpp"
+#include "EpollLoop.hpp"
+#include "HttpChannel.hpp"
 
-class HttpChannel;
 class ThreadPool;
 
 enum class ProtocolType
@@ -19,7 +20,7 @@ enum class ProtocolType
 class ClientConnection : public std::enable_shared_from_this<ClientConnection>
 {
 public:
-    ClientConnection(int fd, int id, ThreadPool &tp);
+    ClientConnection(int fd, int id, ThreadPool &tp, EpollLoop *const loop);
     ~ClientConnection();
 
     // 禁止拷贝
@@ -37,16 +38,25 @@ public:
     // 获取读缓冲区引用（协议检测用）
     std::string &read_buffer() { return read_buffer_; }
 
+    // 实现非阻塞写
+    void send_data(const std::string &data); // 由协议处理器调用
+    void handle_write();                     // 由EpollLoop在EPOLLOUT时调用
+    void register_write_event();             // 注册写事件
+
 private:
     int fd_;
     int conn_id_;
     std::string read_buffer_;
+
     std::string write_buffer_;
+    bool write_registered_ = false; // 是否已注册EPOLLOUT事件
 
     ProtocolType protocol_type_ = ProtocolType::UNKNOWN;
     std::unique_ptr<ProtocolHandler> handler_;
 
     ThreadPool &thread_pool_;
+
+    EpollLoop *const loop_;
 };
 
 #endif

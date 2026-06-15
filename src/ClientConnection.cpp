@@ -1,12 +1,11 @@
 #include "ClientConnection.hpp"
 #include "HttpChannel.hpp"
-#include "ProtocolParser.hpp"
 #include <unistd.h>
 #include <cerrno>
 #include <iostream>
 #include <sys/socket.h>
 
-ClientConnection::ClientConnection(int fd, int id, ThreadPool &tp) : fd_(fd), conn_id_(id), thread_pool_(tp) {}
+ClientConnection::ClientConnection(int fd, int id, ThreadPool &tp, EpollLoop *const loop) : fd_(fd), conn_id_(id), thread_pool_(tp), loop_(loop) {}
 
 ClientConnection::~ClientConnection()
 {
@@ -100,5 +99,79 @@ void ClientConnection::close_connection()
     {
         close(fd_);
         fd_ = -1;
+    }
+}
+
+void ClientConnection::handle_write()
+{
+    if (write_buffer_.empty())
+    {
+        if (write_registered_)
+        {
+            loop_->remove_write_event(fd_); // 关键：取消内核中的 EPOLLOUT
+            write_registered_ = false;
+        }
+        return;
+    }
+    int n = ::send(fd_, write_buffer_.data(), write_buffer_.size(), MSG_DONTWAIT);
+    if (n < 0)
+    {
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
+            return;
+        else
+        {
+            close_connection();
+            return;
+        }
+    }
+    if (n == (int)write_buffer_.size())
+    {
+        write_buffer_.clear();
+        if (write_registered_)
+        {
+            loop_->remove_write_event(fd_);
+            write_registered_ = false;
+        }
+    }
+    else
+    {
+        write_buffer_.erase(0, n);
+    }
+}
+
+void ClientConnection::send_data(const std::string &data)
+{
+    bool was_empty = write_buffer_.empty();
+    write_buffer_.append(data);
+
+    if (was_empty)
+    {
+        // 之前没有待发送数据，现在尝试立即发送
+        int n = ::send(fd_, write_buffer_.data(), write_buffer_.size(), MSG_DONTWAIT); // MSG_DONTWAIT表示发送不了就不阻塞直接返回，“::”表全局作用域，避免冲突
+        if (n < 0)
+        {
+            if (errno == EAGAIN || errno == EWOULDBLOCK)
+            {
+                // 缓冲区满，注册下次再试
+                loop_->add_write_event(fd_);
+                write_registered_ = true;
+            }
+            else
+            {
+                close_connection();
+            }
+            return;
+        }
+
+        if (n == write_buffer_.size())
+        {
+            write_buffer_.clear();
+        }
+        else
+        {
+            write_buffer_.erase(0, n);
+            loop_->add_write_event(fd_);
+            write_registered_ = true;
+        }
     }
 }
