@@ -3,9 +3,18 @@
 
 #include <string>
 #include <memory>
+#include "ProtocolHandler.hpp"
 
 class HttpChannel;
 class ThreadPool;
+
+enum class ProtocolType
+{
+    UNKNOWN,
+    HTTP,
+    SSE,
+    CUSTOM_LINE
+};
 
 class ClientConnection : public std::enable_shared_from_this<ClientConnection>
 {
@@ -32,7 +41,11 @@ private:
     int fd_;
     int conn_id_;
     std::string read_buffer_;
-    std::unique_ptr<HttpChannel> http_channel_;
+    std::string write_buffer_;
+
+    ProtocolType protocol_type_ = ProtocolType::UNKNOWN;
+    std::unique_ptr<ProtocolHandler> handler_;
+
     ThreadPool &thread_pool_;
 };
 

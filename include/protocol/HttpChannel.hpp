@@ -4,17 +4,19 @@
 #include <string>
 #include <unordered_map>
 #include <memory>
+#include "ProtocolHandler.hpp"
 
 class ClientConnection;
 class ThreadPool;
 
-class HttpChannel
+class HttpChannel : public ProtocolHandler
 {
 public:
     HttpChannel(ThreadPool &tp); // 线程池集成新增
     ~HttpChannel() = default;
 
-    bool process(int client_fd, std::string &read_buffer);
+    bool process(int client_fd, std::string &read_buffer) override;
+    void reset() override;
 
 private:
     enum ParseState
@@ -41,7 +43,7 @@ private:
     bool parse_body(std::string &buffer);
     std::string generate_response();
     std::string generate_error_response(int status_code);
-    void reset();
+
     std::string get_mime_type(const std::string &path);
     std::string get_executable_dir();
 };

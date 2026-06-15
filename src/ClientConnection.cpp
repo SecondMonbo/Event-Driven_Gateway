@@ -1,7 +1,6 @@
 #include "ClientConnection.hpp"
 #include "HttpChannel.hpp"
 #include "ProtocolParser.hpp"
-#include "Dispatcher.hpp"
 #include <unistd.h>
 #include <cerrno>
 #include <iostream>
@@ -51,31 +50,36 @@ bool ClientConnection::on_readable()
     }
 
     // 协议检测（HTTP）
-    if (!http_channel_)
+    if (protocol_type_ == ProtocolType::UNKNOWN && !read_buffer_.empty())
     {
-        if (read_buffer_.find("GET ") == 0 || read_buffer_.find("POST ") == 0 ||
-            read_buffer_.find("PUT ") == 0 || read_buffer_.find("HEAD ") == 0)
+        if (read_buffer_.find("GET ") == 0 || read_buffer_.find("POST ") == 0)
         {
-            http_channel_ = std::make_unique<HttpChannel>(thread_pool_);
+            protocol_type_ = ProtocolType::HTTP;
+            handler_ = std::make_unique<HttpChannel>(thread_pool_);
+        }
+        else if (read_buffer_.find("PING|") == 0 || read_buffer_.find("CHAT|") == 0)
+        {
+            protocol_type_ = ProtocolType::CUSTOM_LINE;
+
+            // 为了统一，暂时不对自定义协议做处理
+        }
+        else
+        {
+            // 未知协议，关闭连接
+            close_connection();
+            return true;
         }
     }
 
-    if (http_channel_)
+    if (protocol_type_ == ProtocolType::HTTP)
     {
-        need_close = http_channel_->process(fd_, read_buffer_);
+        need_close = handler_->process(fd_, read_buffer_);
         if (need_close)
             close_connection();
     }
-    else
+    else if (protocol_type_ == ProtocolType::CUSTOM_LINE)
     {
-        // 自定义行协议
-        std::string line;
-        while (ProtocolParser::extract_line(read_buffer_, line))
-        {
-            Message msg = ProtocolParser::parse(conn_id_, line);
-            std::string resp = Dispatcher::dispatch(msg) + "\n";
-            send_response(resp);
-        }
+        need_close = handler_->process(fd_, read_buffer_);
     }
     return need_close;
 }
