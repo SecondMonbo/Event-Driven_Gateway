@@ -3,9 +3,10 @@
 
 #include <string>
 #include <memory>
-#include "ProtocolHandler.hpp"
 #include "EpollLoop.hpp"
-#include "HttpChannel.hpp"
+#include "protocol/ProtocolHandler.hpp"
+#include "protocol/HttpChannel.hpp"
+#include "protocol/HttpChannel.hpp"
 
 class ThreadPool;
 
@@ -32,7 +33,6 @@ public:
     bool id_closed() const { return fd_ == -1; }
 
     bool on_readable(); // 返回 true 表示连接需要关闭
-    void send_response(const std::string &response);
     void close_connection();
 
     // 获取读缓冲区引用（协议检测用）

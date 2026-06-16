@@ -1,5 +1,4 @@
 #include "ClientConnection.hpp"
-#include "HttpChannel.hpp"
 #include <unistd.h>
 #include <cerrno>
 #include <iostream>
@@ -54,7 +53,7 @@ bool ClientConnection::on_readable()
         if (read_buffer_.find("GET ") == 0 || read_buffer_.find("POST ") == 0)
         {
             protocol_type_ = ProtocolType::HTTP;
-            handler_ = std::make_unique<HttpChannel>(thread_pool_);
+            handler_ = std::make_unique<HttpChannel>(thread_pool_, this);
         }
         else if (read_buffer_.find("PING|") == 0 || read_buffer_.find("CHAT|") == 0)
         {
@@ -72,25 +71,15 @@ bool ClientConnection::on_readable()
 
     if (protocol_type_ == ProtocolType::HTTP)
     {
-        need_close = handler_->process(fd_, read_buffer_);
+        need_close = handler_->process(read_buffer_);
         if (need_close)
             close_connection();
     }
     else if (protocol_type_ == ProtocolType::CUSTOM_LINE)
     {
-        need_close = handler_->process(fd_, read_buffer_);
+        need_close = handler_->process(read_buffer_);
     }
     return need_close;
-}
-
-void ClientConnection::send_response(const std::string &response)
-{
-    ssize_t sent = send(fd_, response.c_str(), response.size(), 0);
-    if (sent < 0)
-    {
-        perror("send");
-        close_connection();
-    }
 }
 
 void ClientConnection::close_connection()
@@ -163,7 +152,7 @@ void ClientConnection::send_data(const std::string &data)
             return;
         }
 
-        if (n == write_buffer_.size())
+        if (n == (int)write_buffer_.size())
         {
             write_buffer_.clear();
         }

@@ -1,4 +1,4 @@
-#include "HttpChannel.hpp"
+#include "protocol/HttpChannel.hpp"
 #include <sstream>
 #include <iostream>
 #include <cctype>
@@ -8,7 +8,7 @@
 #include <fstream>
 #include <limits.h>
 
-HttpChannel::HttpChannel(ThreadPool &tp) : thread_pool_(tp)
+HttpChannel::HttpChannel(ThreadPool &tp, ClientConnection *conn) : thread_pool_(tp), conn_(conn)
 {
     // 其他成员使用类内初始化器，无需显式初始化
 }
@@ -159,6 +159,8 @@ std::string HttpChannel::generate_response()
         struct stat st;
         if (stat(file_path.c_str(), &st) == 0 && S_ISREG(st.st_mode))
         {
+            // 引入写缓冲区，修改发送逻辑支持较大文件发送
+            // 1.发送响应头，不含body
             std::string content_type = get_mime_type(file_path);
             std::ifstream file(file_path, std::ios::binary);
             std::string body((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>()); // 多加一层括号，避免Most Vexing Parse，明确是一个对象构造
@@ -204,7 +206,7 @@ void HttpChannel::reset()
     content_length_ = 0;
 }
 
-bool HttpChannel::process(int client_fd, std::string &read_buffer)
+bool HttpChannel::process(std::string &read_buffer)
 {
     while (state_ != PARSE_DONE)
     {
@@ -239,7 +241,7 @@ bool HttpChannel::process(int client_fd, std::string &read_buffer)
             if (!parse_header_line(line))
             {
                 std::string error_reponse = generate_error_response(400);
-                send(client_fd, error_reponse.c_str(), sizeof(error_reponse), 0);
+                conn_->send_data(error_reponse);
                 return true;
             }
             break;
@@ -257,7 +259,7 @@ bool HttpChannel::process(int client_fd, std::string &read_buffer)
 
     // 生成并发送响应
     std::string response = generate_response();
-    send(client_fd, response.c_str(), response.size(), 0);
+    conn_->send_data(response);
 
     // Keep-Alive 处理
     bool keep_alive = false;
@@ -269,7 +271,7 @@ bool HttpChannel::process(int client_fd, std::string &read_buffer)
     {
         reset();
         // 递归调用处理下一个请求（注意栈深度，简单场景可用）
-        return process(client_fd, read_buffer);
+        return process(read_buffer);
     }
     else
     {

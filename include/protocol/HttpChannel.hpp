@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <memory>
 #include "ProtocolHandler.hpp"
+#include "ClientConnection.hpp"
 
 class ClientConnection;
 class ThreadPool;
@@ -12,10 +13,10 @@ class ThreadPool;
 class HttpChannel : public ProtocolHandler
 {
 public:
-    HttpChannel(ThreadPool &tp); // 线程池集成新增
+    HttpChannel(ThreadPool &tp, ClientConnection *conn); // 线程池集成新增
     ~HttpChannel() = default;
 
-    bool process(int client_fd, std::string &read_buffer) override;
+    bool process(std::string &read_buffer) override;
     void reset() override;
 
 private:
@@ -36,6 +37,7 @@ private:
     int content_length_ = 0;
 
     ThreadPool &thread_pool_; // 引用
+    ClientConnection *const conn_;
 
     bool extract_line(std::string &buffer, std::string &line);
     bool parse_request_line(const std::string &line);

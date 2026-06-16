@@ -1,18 +1,24 @@
-#include "CustomLineHandler.hpp"
+#include "protocol/CustomLineHandler.hpp"
 #include <ctime>
 #include <sstream>
 
 CustomLineHandler::CustomLineHandler(int conn_id, ClientConnection *conn) : conn_id_(conn_id), conn_(conn) {};
 
-bool CustomLineHandler::process(int fd, std::string &read_buffer)
+bool CustomLineHandler::process(std::string &read_buffer)
 {
     std::string line;
     while (extract_line(read_buffer, line))
     {
         Message msg = parse(conn_id_, line);
         std::string resp = dispatch(msg) + "\n";
-        send_response(resp);
+        conn_->send_data(resp);
     }
+    return true;
+}
+
+void CustomLineHandler::reset()
+{
+    return;
 }
 
 std::string CustomLineHandler::dispatch(const Message &msg)
