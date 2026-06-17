@@ -43,7 +43,7 @@ private:
     bool parse_request_line(const std::string &line);
     bool parse_header_line(const std::string &line);
     bool parse_body(std::string &buffer);
-    std::string generate_response();
+    void generate_response();
     std::string generate_error_response(int status_code);
 
     std::string get_mime_type(const std::string &path);

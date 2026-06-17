@@ -130,6 +130,8 @@ void ClientConnection::handle_write()
 
 void ClientConnection::send_data(const std::string &data)
 {
+    if (data.empty())
+        return;
     bool was_empty = write_buffer_.empty();
     write_buffer_.append(data);
 

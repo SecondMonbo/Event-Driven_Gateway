@@ -147,7 +147,7 @@ std::string HttpChannel::get_mime_type(const std::string &path)
     return "application/octet-stream";
 }
 
-std::string HttpChannel::generate_response()
+void HttpChannel::generate_response()
 {
     if (method_ == "GET")
     {
@@ -161,22 +161,34 @@ std::string HttpChannel::generate_response()
         {
             // 引入写缓冲区，修改发送逻辑支持较大文件发送
             // 1.发送响应头，不含body
-            std::string content_type = get_mime_type(file_path);
+            std::string header = "HTTP/1.1 200 OK\r\n"
+                                 "Content-Type: " +
+                                 get_mime_type(file_path) + "\r\n"
+                                                            "Content-Length: " +
+                                 std::to_string(st.st_size) + "\r\n"
+                                                              "Connection: close\r\n"
+                                                              "\r\n";
+            conn_->send_data(header);
+            // 2.分块读取文件并发送
             std::ifstream file(file_path, std::ios::binary);
-            std::string body((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>()); // 多加一层括号，避免Most Vexing Parse，明确是一个对象构造
-            std::string response = "HTTP/1.1 200 OK\r\n"
-                                   "Content-Type: " +
-                                   content_type + "\r\n"
-                                                  "Content-Length: " +
-                                   std::to_string(body.size()) + "\r\n"
-                                                                 "Connection: close\r\n"
-                                                                 "\r\n" +
-                                   body;
-            return response;
+            if (!file.is_open())
+            {
+                conn_->send_data(generate_error_response(404));
+            }
+            const size_t CHUNK_SIZE = 64 * 1024; // 64KB每块
+            std::vector<char> buffer(CHUNK_SIZE);
+            while (file.read(buffer.data(), CHUNK_SIZE) || file.gcount() > 0)
+            {
+                size_t bytes_read = file.gcount();
+                conn_->send_data(std::string(buffer.data(), bytes_read));
+            }
+            file.close();
+            return;
         }
         else
         {
-            return generate_error_response(404);
+            conn_->send_data(generate_error_response(404));
+            return;
         }
     }
 
@@ -192,7 +204,7 @@ std::string HttpChannel::generate_response()
                            (headers_["connection"] == "keep-alive" ? "keep-alive" : "close") + "\r\n"
                                                                                                "\r\n" +
                            body;
-    return response;
+    conn_->send_data(response);
 }
 
 void HttpChannel::reset()
@@ -257,9 +269,8 @@ bool HttpChannel::process(std::string &read_buffer)
         }
     }
 
-    // 生成并发送响应
-    std::string response = generate_response();
-    conn_->send_data(response);
+    // 生成并发送响应,由函数内部负责
+    generate_response();
 
     // Keep-Alive 处理
     bool keep_alive = false;
