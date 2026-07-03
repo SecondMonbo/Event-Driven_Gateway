@@ -16,7 +16,7 @@ public:
     HttpChannel(ThreadPool &tp, ClientConnection *conn); // 线程池集成新增
     ~HttpChannel() = default;
 
-    bool process(std::string &read_buffer) override;
+    ProcessResult process(std::string &read_buffer) override;
     void reset() override;
 
 private:

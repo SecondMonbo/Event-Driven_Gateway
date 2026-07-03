@@ -24,7 +24,7 @@ class CustomLineHandler : public ProtocolHandler
 {
 public:
     CustomLineHandler(int conn_id, ClientConnection *conn);
-    bool process(std::string &read_buffer) override;
+    ProcessResult process(std::string &read_buffer) override;
     void reset() override;
 
     static bool extract_line(std::string &buffer, std::string &line);

@@ -58,8 +58,7 @@ bool ClientConnection::on_readable()
         else if (read_buffer_.find("PING|") == 0 || read_buffer_.find("CHAT|") == 0)
         {
             protocol_type_ = ProtocolType::CUSTOM_LINE;
-
-            // 为了统一，暂时不对自定义协议做处理
+            handler_ = std::make_unique<CustomLineHandler>(fd_, this);
         }
         else
         {
@@ -69,16 +68,38 @@ bool ClientConnection::on_readable()
         }
     }
 
-    if (protocol_type_ == ProtocolType::HTTP)
+    while (true)
     {
-        need_close = handler_->process(read_buffer_);
-        if (need_close)
-            close_connection();
+        ProcessResult result = handler_->process(read_buffer_);
+        if (result == ProcessResult::CLOSE)
+        {
+            need_close = true;
+            break;
+        }
+        else if (result == ProcessResult::CONTINUE)
+        {
+            if (read_buffer_.empty())
+            {
+                need_close = false;
+                break;
+            }
+            else
+            {
+                continue;
+            }
+        }
+        else if (result == ProcessResult::UPGRADE_SSE)
+        {
+            /* 未设计SSE协议，省略*/
+            break;
+        }
+        else if (result == ProcessResult::UPGRADE_WEBSOCKET)
+        {
+            /*未设计Websocket，省略 */
+            break;
+        }
     }
-    else if (protocol_type_ == ProtocolType::CUSTOM_LINE)
-    {
-        need_close = handler_->process(read_buffer_);
-    }
+
     return need_close;
 }
 

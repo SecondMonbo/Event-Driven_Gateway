@@ -218,7 +218,7 @@ void HttpChannel::reset()
     content_length_ = 0;
 }
 
-bool HttpChannel::process(std::string &read_buffer)
+ProcessResult HttpChannel::process(std::string &read_buffer)
 {
     while (state_ != PARSE_DONE)
     {
@@ -228,11 +228,11 @@ bool HttpChannel::process(std::string &read_buffer)
         {
             std::string line;
             if (!extract_line(read_buffer, line))
-                return false;
+                return ProcessResult::CONTINUE;
             if (!parse_request_line(line))
             {
 
-                return true;
+                return ProcessResult::CLOSE;
             }
             state_ = PARSE_HEADERS;
             break;
@@ -241,7 +241,7 @@ bool HttpChannel::process(std::string &read_buffer)
         {
             std::string line;
             if (!extract_line(read_buffer, line))
-                return false;
+                return ProcessResult::CONTINUE;
             if (line.empty())
             {
                 if (method_ == "POST" && content_length_ > 0)
@@ -254,18 +254,18 @@ bool HttpChannel::process(std::string &read_buffer)
             {
                 std::string error_reponse = generate_error_response(400);
                 conn_->send_data(error_reponse);
-                return true;
+                return ProcessResult::CLOSE;
             }
             break;
         }
         case PARSE_BODY:
         {
             if (!parse_body(read_buffer))
-                return false;
+                return ProcessResult::CONTINUE;
             break;
         }
         default:
-            return true;
+            return ProcessResult::CLOSE;
         }
     }
 
@@ -281,11 +281,11 @@ bool HttpChannel::process(std::string &read_buffer)
     if (keep_alive)
     {
         reset();
-        // 递归调用处理下一个请求（注意栈深度，简单场景可用）
-        return process(read_buffer);
+        // 返回继续处理的信号，由clientconnection循环处理调用
+        return ProcessResult::CONTINUE;
     }
     else
     {
-        return true; // 关闭连接
+        return ProcessResult::CLOSE; // 关闭连接
     }
 }

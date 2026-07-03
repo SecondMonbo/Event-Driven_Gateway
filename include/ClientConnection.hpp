@@ -6,7 +6,7 @@
 #include "EpollLoop.hpp"
 #include "protocol/ProtocolHandler.hpp"
 #include "protocol/HttpChannel.hpp"
-#include "protocol/HttpChannel.hpp"
+#include "protocol/CustomLineHandler.hpp"
 
 class ThreadPool;
 

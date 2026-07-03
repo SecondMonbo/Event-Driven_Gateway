@@ -4,7 +4,7 @@
 
 CustomLineHandler::CustomLineHandler(int conn_id, ClientConnection *conn) : conn_id_(conn_id), conn_(conn) {};
 
-bool CustomLineHandler::process(std::string &read_buffer)
+ProcessResult CustomLineHandler::process(std::string &read_buffer)
 {
     std::string line;
     while (extract_line(read_buffer, line))
@@ -13,7 +13,7 @@ bool CustomLineHandler::process(std::string &read_buffer)
         std::string resp = dispatch(msg) + "\n";
         conn_->send_data(resp);
     }
-    return true;
+    return ProcessResult::CONTINUE;
 }
 
 void CustomLineHandler::reset()
