@@ -166,8 +166,10 @@ void HttpChannel::generate_response()
                                  get_mime_type(file_path) + "\r\n"
                                                             "Content-Length: " +
                                  std::to_string(st.st_size) + "\r\n"
-                                                              "Connection: close\r\n"
-                                                              "\r\n";
+                                                              "Connection: " +
+                                 (headers_["connection"] == "keep-alive" ? "keep-alive" : "close") +
+                                 "\r\n"
+                                 "\r\n";
             conn_->send_data(header);
             // 2.分块读取文件并发送
             std::ifstream file(file_path, std::ios::binary);
