@@ -271,6 +271,19 @@ ProcessResult HttpChannel::process(std::string &read_buffer)
         }
     }
 
+    // 在生成普通响应之前，进行SSE检测
+    if (method_ == "GET")
+    {
+        bool is_sse_path = (path_ == "/events");
+        auto accept_it = headers_.find("accept");
+        bool has_sse_accept = (accept_it != headers_.end() && accept_it->second.find("text/event-stream") != std::string::npos);
+        if (is_sse_path || has_sse_accept)
+        {
+            reset();
+            return ProcessResult::UPGRADE_SSE;
+        }
+    }
+
     // 生成并发送响应,由函数内部负责
     generate_response();
 

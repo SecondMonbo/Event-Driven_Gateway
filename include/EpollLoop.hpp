@@ -3,6 +3,7 @@
 
 #include <unordered_map>
 #include <sys/epoll.h>
+#include <sys/eventfd.h>
 #include "ThreadPool.hpp"
 
 class ClientConnection;
@@ -28,6 +29,9 @@ public:
 
     ThreadPool &get_thread_pool() { return thread_pool_; }
 
+    // 提供唤醒机制
+    void wakeup();
+
 private:
     void add_fd(int fd, uint32_t events);
     void remove_fd(int fd);
@@ -37,6 +41,7 @@ private:
 
     int epfd_;
     int listen_fd_;
+    int wakeup_fd_;
     std::unordered_map<int, std::shared_ptr<ClientConnection>> connections_;
     std::unordered_map<int, uint32_t> fd_events_;
     static const int MAX_EVENTS = 1024;

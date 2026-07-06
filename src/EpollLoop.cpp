@@ -17,7 +17,15 @@ static int set_nonblocking(int fd)
     return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 }
 
-EpollLoop::EpollLoop() : epfd_(-1), listen_fd_(-1), thread_pool_(4) {}
+EpollLoop::EpollLoop() : epfd_(-1), listen_fd_(-1), wakeup_fd_(-1), thread_pool_(4)
+{
+    // 创建eventfd,初始值为0，非阻塞模式
+    wakeup_fd_ = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+    if (wakeup_fd_ == -1)
+    {
+        std::cerr << "eventfd";
+    }
+}
 
 EpollLoop::~EpollLoop()
 {
@@ -25,6 +33,8 @@ EpollLoop::~EpollLoop()
         close(epfd_);
     if (listen_fd_ != -1)
         close(listen_fd_);
+    if (wakeup_fd_ != -1)
+        close(wakeup_fd_);
 
     connections_.clear();
 }
@@ -71,6 +81,7 @@ bool EpollLoop::init(int port)
     }
 
     add_fd(listen_fd_, EPOLLIN | EPOLLET);
+    add_fd(wakeup_fd_, EPOLLIN);
 
     std::cout << "Server listening on port " << port << std::endl;
     return true;
@@ -150,6 +161,16 @@ void EpollLoop::remove_connection(int fd)
     }
 }
 
+void EpollLoop::wakeup()
+{
+    uint64_t val = 1;
+    ssize_t ret = write(wakeup_fd_, &val, sizeof(val));
+    if (ret == -1 && errno != EAGAIN)
+    {
+        std::cerr << "wakeup write";
+    }
+}
+
 void EpollLoop::run()
 {
     epoll_event events[MAX_EVENTS];
@@ -167,7 +188,26 @@ void EpollLoop::run()
             if (fd == listen_fd_)
             {
                 handle_accept();
+                continue;
             }
+
+            if (fd == wakeup_fd_)
+            {
+                uint64_t val;
+                // write()会使计数器加1，循环使用read确保清空
+                while (read(wakeup_fd_, &val, sizeof(val)) > 0)
+                {
+                }
+                // 直接遍历所有连接处理
+                // 只会在有sse协议触发时出现，如果成为了性能瓶颈后续优化
+                for (auto &pair : connections_)
+                {
+                    pair.second->flush();
+                }
+                continue;
+            }
+
+            // 普通I/O事件
             if (events[i].events & EPOLLIN)
             {
                 handle_read(fd);

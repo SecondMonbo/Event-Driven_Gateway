@@ -90,7 +90,7 @@ bool ClientConnection::on_readable()
         }
         else if (result == ProcessResult::UPGRADE_SSE)
         {
-            /* 未设计SSE协议，省略*/
+            handler_ = std::make_unique<SseHandler>(this, thread_pool_);
             break;
         }
         else if (result == ProcessResult::UPGRADE_WEBSOCKET)

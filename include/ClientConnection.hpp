@@ -7,6 +7,7 @@
 #include "protocol/ProtocolHandler.hpp"
 #include "protocol/HttpChannel.hpp"
 #include "protocol/CustomLineHandler.hpp"
+#include "protocol/SseHandler.hpp"
 
 class ThreadPool;
 
@@ -42,6 +43,14 @@ public:
     void send_data(const std::string &data); // 由协议处理器调用
     void handle_write();                     // 由EpollLoop在EPOLLOUT时调用
     void register_write_event();             // 注册写事件
+
+    // 唤醒主循环
+    void flush()
+    {
+        if (handler_)
+            handler_->process(read_buffer_);
+    };
+    void wakeup() { loop_->wakeup(); };
 
 private:
     int fd_;
