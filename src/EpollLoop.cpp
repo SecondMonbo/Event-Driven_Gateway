@@ -176,6 +176,7 @@ void EpollLoop::run()
     epoll_event events[MAX_EVENTS];
     while (true)
     {
+        int timeout_ms = timer_manager_.get_next_timeout_ms();
         int nfds = epoll_wait(epfd_, events, MAX_EVENTS, -1);
         if (nfds < 0)
         {
@@ -221,6 +222,7 @@ void EpollLoop::run()
                 }
             }
         }
+        timer_manager_.process_expired_timers();
         thread_pool_.process_completions();
     }
 }

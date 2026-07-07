@@ -5,6 +5,7 @@
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include "ThreadPool.hpp"
+#include "TimerManager.hpp"
 
 class ClientConnection;
 
@@ -47,6 +48,8 @@ private:
     static const int MAX_EVENTS = 1024;
 
     ThreadPool thread_pool_;
+
+    TimerManager timer_manager_;
 };
 
 #endif

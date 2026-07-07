@@ -32,10 +32,13 @@ public:
     // 关闭连接
     void close();
 
+    // 用以测试的sse协议心跳计时器(3秒)
+    void start_heartbeat();
+
     void send_event(const std::string &data, const std::string &event_type, const std::string &id);
 
 private:
-        ClientConnection *const conn_;
+    ClientConnection *const conn_;
     ThreadPool &thread_pool_;
     bool handshake_sent_ = false;
     bool closed_ = false;
