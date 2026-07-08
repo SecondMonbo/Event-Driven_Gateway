@@ -1,8 +1,16 @@
 #include "protocol/SseHandler.hpp"
 #include <sstream>
 
-SseHandler::SseHandler(ClientConnection *conn, ThreadPool &tp) : conn_(conn), thread_pool_(tp) {}
+SseHandler::SseHandler(const ConnectionContext &ctx) : conn_(ctx.conn), thread_pool_(ctx.thread_pool), timer_manager_(ctx.loop.get_timer_manager())
+{
+    // std::cout << "sse upgrade successfully\n";
+}
 void SseHandler::reset() {}
+
+SseHandler::~SseHandler()
+{
+    close();
+}
 
 std::string SseHandler::format_sse_message(const std::string &data, const std::string &event_type, const std::string &id)
 {
@@ -80,6 +88,39 @@ void SseHandler::push_event(const std::string &data, const std::string &event_ty
     conn_->wakeup();
 }
 
+void SseHandler::start_heartbeat()
+{
+    if (timer_id_ != 0)
+        return;
+    timer_id_ = timer_manager_.add_timer(3000, [this]()
+                                         {
+        auto now = std::chrono::system_clock::now();
+        auto t = std::chrono::system_clock::to_time_t(now);
+        std::string time_str = std::ctime(&t);
+        time_str.pop_back();
+        push_event("Current time: "+time_str,"heartbeat",std::to_string(t)); }, 3000);
+}
+
+void SseHandler::close()
+{
+    if (closed_)
+        return;
+    closed_ = true;
+
+    // 取消定时器
+    if (timer_id_ != 0)
+    {
+        timer_manager_.cancel_timer(timer_id_);
+        timer_id_ = 0;
+    }
+    // 清空待发送时间列表(释放内存)
+    {
+        std::lock_guard<std::mutex> lock(queue_mutex_);
+        std::queue<std::string> empty;
+        pending_events_.swap(empty);
+    }
+}
+
 ProcessResult SseHandler::process(std::string &read_buffer)
 {
     (void)read_buffer; // SSE不需要读取客户端数据，将变量转为（void）类型，避免编译器unused variable()未使用变量警告
@@ -96,6 +137,10 @@ ProcessResult SseHandler::process(std::string &read_buffer)
                              "\r\n";
         conn_->send_data(header);
         handshake_sent_ = true;
+
+        // 启动心跳
+        // std::cout << "心跳启动\n";
+        start_heartbeat();
     }
 
     std::lock_guard<std::mutex> lock(queue_mutex_);

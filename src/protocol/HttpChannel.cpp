@@ -280,6 +280,7 @@ ProcessResult HttpChannel::process(std::string &read_buffer)
         if (is_sse_path || has_sse_accept)
         {
             reset();
+            // std::cout << "SSE request detected, upgrading..." << std::endl;
             return ProcessResult::UPGRADE_SSE;
         }
     }

@@ -177,7 +177,7 @@ void EpollLoop::run()
     while (true)
     {
         int timeout_ms = timer_manager_.get_next_timeout_ms();
-        int nfds = epoll_wait(epfd_, events, MAX_EVENTS, -1);
+        int nfds = epoll_wait(epfd_, events, MAX_EVENTS, timeout_ms);
         if (nfds < 0)
         {
             perror("epoll_wait");

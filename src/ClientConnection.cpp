@@ -1,10 +1,16 @@
 #include "ClientConnection.hpp"
+
 #include <unistd.h>
 #include <cerrno>
 #include <iostream>
 #include <sys/socket.h>
 
-ClientConnection::ClientConnection(int fd, int id, ThreadPool &tp, EpollLoop *const loop) : fd_(fd), conn_id_(id), thread_pool_(tp), loop_(loop) {}
+#include "protocol/HttpChannel.hpp"
+#include "protocol/CustomLineHandler.hpp"
+#include "protocol/SseHandler.hpp"
+
+ClientConnection::ClientConnection(int fd, int id, ThreadPool &tp, EpollLoop *const loop) : fd_(fd), conn_id_(id), thread_pool_(tp), loop_(loop),
+                                                                                            ctx_(this, tp, loop->get_timer_manager(), *loop) {}
 
 ClientConnection::~ClientConnection()
 {
@@ -90,7 +96,9 @@ bool ClientConnection::on_readable()
         }
         else if (result == ProcessResult::UPGRADE_SSE)
         {
-            handler_ = std::make_unique<SseHandler>(this, thread_pool_);
+            // std::cout << "this is clientconnection,sse upgrading...\n";
+            handler_ = std::make_unique<SseHandler>(this->get_context());
+            handler_->process(read_buffer_);
             break;
         }
         else if (result == ProcessResult::UPGRADE_WEBSOCKET)

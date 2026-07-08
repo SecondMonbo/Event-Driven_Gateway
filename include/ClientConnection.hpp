@@ -5,9 +5,7 @@
 #include <memory>
 #include "EpollLoop.hpp"
 #include "protocol/ProtocolHandler.hpp"
-#include "protocol/HttpChannel.hpp"
-#include "protocol/CustomLineHandler.hpp"
-#include "protocol/SseHandler.hpp"
+#include "ConnectionContext.hpp"
 
 class ThreadPool;
 
@@ -52,20 +50,23 @@ public:
     };
     void wakeup() { loop_->wakeup(); };
 
+    // 获取上下文
+    const ConnectionContext &get_context() const { return ctx_; };
+
 private:
+    // C++按照声明顺序初始化！！！
     int fd_;
     int conn_id_;
+    ThreadPool &thread_pool_;
+    EpollLoop *const loop_;
     std::string read_buffer_;
-
     std::string write_buffer_;
-    bool write_registered_ = false; // 是否已注册EPOLLOUT事件
 
+    bool write_registered_ = false; // 是否已注册EPOLLOUT事件
     ProtocolType protocol_type_ = ProtocolType::UNKNOWN;
     std::unique_ptr<ProtocolHandler> handler_;
 
-    ThreadPool &thread_pool_;
-
-    EpollLoop *const loop_;
+    ConnectionContext ctx_;
 };
 
 #endif

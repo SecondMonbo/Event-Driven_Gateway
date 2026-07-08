@@ -51,7 +51,4 @@ private:
     std::unordered_map<uint64_t, bool> canceled_map_; // 取消标记表，不立即删除，而是等到处理时跳过，即懒删除模式(Lazy Deletion)
     mutable std::mutex mutex_;
     uint64_t next_id_ = 1;
-
-    // 清理已取消的节点
-    void clean_canceled_timers();
 };

@@ -33,6 +33,9 @@ public:
     // 提供唤醒机制
     void wakeup();
 
+    // 获取计时器
+    TimerManager &get_timer_manager() { return timer_manager_; };
+
 private:
     void add_fd(int fd, uint32_t events);
     void remove_fd(int fd);

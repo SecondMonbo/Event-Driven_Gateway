@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <iostream>
 
 // 处理结果枚举类，定义程序返回值，用以HTTP协议升级SSE协议和WebSocket协议
 enum class ProcessResult
