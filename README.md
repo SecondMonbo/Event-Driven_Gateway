@@ -30,8 +30,8 @@
 ---
 
 ## 🧱 项目结构
-```
 
+```bash
 Event-Driven_System_for_Agent_Gateways/
 ├── CMakeLists.txt
 ├── README.md
@@ -58,7 +58,6 @@ Event-Driven_System_for_Agent_Gateways/
 │ └── CustomLineHandler.cpp
 └── www/ # 静态文件根目录（需手动创建）
 └── index.html
-
 ````
 ---
 
