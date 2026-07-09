@@ -1,4 +1,3 @@
----
 
 ```markdown
 # 🚀 Event-Driven High-Performance Gateway
