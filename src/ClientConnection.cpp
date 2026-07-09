@@ -59,7 +59,7 @@ bool ClientConnection::on_readable()
         if (read_buffer_.find("GET ") == 0 || read_buffer_.find("POST ") == 0)
         {
             protocol_type_ = ProtocolType::HTTP;
-            handler_ = std::make_unique<HttpChannel>(thread_pool_, this);
+            handler_ = std::make_unique<HttpChannel>(ctx_);
         }
         else if (read_buffer_.find("PING|") == 0 || read_buffer_.find("CHAT|") == 0)
         {

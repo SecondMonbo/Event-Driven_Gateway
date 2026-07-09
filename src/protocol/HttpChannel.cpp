@@ -8,7 +8,7 @@
 #include <fstream>
 #include <limits.h>
 
-HttpChannel::HttpChannel(ThreadPool &tp, ClientConnection *conn) : thread_pool_(tp), conn_(conn)
+HttpChannel::HttpChannel(ConnectionContext ctx) : ctx_(ctx)
 {
     // 其他成员使用类内初始化器，无需显式初始化
 }
@@ -170,26 +170,26 @@ void HttpChannel::generate_response()
                                  (headers_["connection"] == "keep-alive" ? "keep-alive" : "close") +
                                  "\r\n"
                                  "\r\n";
-            conn_->send_data(header);
+            ctx_.conn->send_data(header);
             // 2.分块读取文件并发送
             std::ifstream file(file_path, std::ios::binary);
             if (!file.is_open())
             {
-                conn_->send_data(generate_error_response(404));
+                ctx_.conn->send_data(generate_error_response(404));
             }
             const size_t CHUNK_SIZE = 64 * 1024; // 64KB每块
             std::vector<char> buffer(CHUNK_SIZE);
             while (file.read(buffer.data(), CHUNK_SIZE) || file.gcount() > 0)
             {
                 size_t bytes_read = file.gcount();
-                conn_->send_data(std::string(buffer.data(), bytes_read));
+                ctx_.conn->send_data(std::string(buffer.data(), bytes_read));
             }
             file.close();
             return;
         }
         else
         {
-            conn_->send_data(generate_error_response(404));
+            ctx_.conn->send_data(generate_error_response(404));
             return;
         }
     }
@@ -206,7 +206,7 @@ void HttpChannel::generate_response()
                            (headers_["connection"] == "keep-alive" ? "keep-alive" : "close") + "\r\n"
                                                                                                "\r\n" +
                            body;
-    conn_->send_data(response);
+    ctx_.conn->send_data(response);
 }
 
 void HttpChannel::reset()
@@ -255,7 +255,7 @@ ProcessResult HttpChannel::process(std::string &read_buffer)
             if (!parse_header_line(line))
             {
                 std::string error_reponse = generate_error_response(400);
-                conn_->send_data(error_reponse);
+                ctx_.conn->send_data(error_reponse);
                 return ProcessResult::CLOSE;
             }
             break;
