@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ProtocolHandler.hpp"
-#include "ClientConnection.hpp"
+#include "core/ClientConnection.hpp"
 #include <string>
 
 class Message

@@ -22,9 +22,12 @@ struct ChatMessage
     ChatMessage(const std::string &r, const std::string &c) : role(r), content(c) {};
 };
 
-class SeesionManager
+class SessionManager
 {
 public:
+    explicit SessionManager(int max_history = 100, int max_idle_seconds = 3600);
+    ~SessionManager() = default;
+
     // 获取会话历史消息
     std::vector<ChatMessage> get_history(const std::string &session_id);
 
@@ -32,7 +35,7 @@ public:
     void append_message(const std::string &session_id, const ChatMessage &msg);
 
     // 获取最近 N 条消息(用于截断)
-    std::vector<ChatMessage> get_current_messages(const std::string &session_id, int n);
+    std::vector<ChatMessage> get_recent_messages(const std::string &session_id, int n);
 
     // 清理长时间未活动的会话（可定时调用）
     void cleanup_expired_sessions();
@@ -44,6 +47,6 @@ private:
     std::unordered_map<std::string, std::vector<ChatMessage>> sessions_;
     std::unordered_map<std::string, std::chrono::steady_clock::time_point> last_activity_;
     std::mutex mutex_;
-    int max_history = 100;        // 默认最多保存100条消息
+    int max_history_ = 100;       // 默认最多保存100条消息
     int max_idle_seconds_ = 3600; // 默认最多保存1小时
 };

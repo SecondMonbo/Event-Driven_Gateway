@@ -1,4 +1,4 @@
-#include "ClientConnection.hpp"
+#include "core/ClientConnection.hpp"
 
 #include <unistd.h>
 #include <cerrno>

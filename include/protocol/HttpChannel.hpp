@@ -5,7 +5,7 @@
 #include <unordered_map>
 #include <memory>
 #include "ProtocolHandler.hpp"
-#include "ClientConnection.hpp"
+#include "core/ClientConnection.hpp"
 
 class ClientConnection;
 class ThreadPool;

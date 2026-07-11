@@ -4,8 +4,8 @@
 #include <unordered_map>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
-#include "ThreadPool.hpp"
-#include "TimerManager.hpp"
+#include "core/ThreadPool.hpp"
+#include "core/TimerManager.hpp"
 
 class ClientConnection;
 

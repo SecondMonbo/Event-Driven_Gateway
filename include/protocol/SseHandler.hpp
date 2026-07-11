@@ -12,7 +12,7 @@ SSE（Server-Sent Events，服务器推送事件） 是一种基于 HTTP 的轻�
 #include <string>
 #include <queue>
 #include <mutex>
-#include "ClientConnection.hpp"
+#include "core/ClientConnection.hpp"
 
 class ThreadPool;
 
