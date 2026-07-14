@@ -9,8 +9,8 @@
 #include "protocol/CustomLineHandler.hpp"
 #include "protocol/SseHandler.hpp"
 
-ClientConnection::ClientConnection(int fd, int id, ThreadPool &tp, EpollLoop *const loop) : fd_(fd), conn_id_(id), thread_pool_(tp), loop_(loop),
-                                                                                            ctx_(this, tp, loop->get_timer_manager(), *loop) {}
+ClientConnection::ClientConnection(int fd, int id, ThreadPool &tp, EpollLoop *const loop, LLMService &llm_service) : fd_(fd), conn_id_(id), thread_pool_(tp), loop_(loop),
+                                                                                                                     ctx_(this, tp, loop->get_timer_manager(), *loop, llm_service) {}
 
 ClientConnection::~ClientConnection()
 {

@@ -20,7 +20,7 @@ enum class ProtocolType
 class ClientConnection : public std::enable_shared_from_this<ClientConnection>
 {
 public:
-    ClientConnection(int fd, int id, ThreadPool &tp, EpollLoop *const loop);
+    ClientConnection(int fd, int id, ThreadPool &tp, EpollLoop *const loop, LLMService &llm_service);
     ~ClientConnection();
 
     // 禁止拷贝

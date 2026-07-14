@@ -7,6 +7,7 @@ gateway
 
 .vscode/
 llama.cpp/
+include/third_party/json.hpp
 
 # 临时文件
 *.swp

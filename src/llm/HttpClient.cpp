@@ -81,10 +81,12 @@ bool HttpClient::post(
     // 检测错误, 分开判断，将来调试有需要方便记录错误信息
     if (res != CURLE_OK)
     {
+        std::cerr << "CURL error: " << curl_easy_strerror(res) << std::endl;
         ctx.success = false;
     }
     else if (http_code >= 400)
     {
+        std::cerr << "HTTP error: " << http_code << std::endl;
         ctx.success = false;
     }
 

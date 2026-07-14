@@ -1,23 +1,17 @@
 #include "core/EpollLoop.hpp"
-#include "llm/HttpClient.hpp"
+#include "llm/SessionManager.hpp"
+#include "llm/LLMService.hpp"
 #include <iostream>
 
 int main()
 {
-    HttpClient client;
-    client.post(
-        "http://localhost:8081/v1/chat/completions",
-        R"({"model":"phi-3","messages":[{"role":"user","content":"你好"}],"stream":false})",
-        [](const char *data, size_t len)
-        {
-            std::cout.write(data, len);
-        },
-        [](bool success)
-        {
-            std::cout << "\nRequest " << (success ? "succeeded" : "failed") << std::endl;
-        });
+    // 会话管理器 (全局单一实例)
+    SessionManager session_manager;
 
-    EpollLoop loop;
+    // 创建大模型服务
+    LLMService llm_service(session_manager);
+
+    EpollLoop loop(llm_service);
     if (!loop.init(12010))
     {
         std::cerr << "Failed to initialize gateway" << std::endl;

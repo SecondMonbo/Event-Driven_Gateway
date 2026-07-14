@@ -8,11 +8,13 @@
 #include "core/TimerManager.hpp"
 
 class ClientConnection;
+class SessionManager;
+class LLMService;
 
 class EpollLoop
 {
 public:
-    EpollLoop();
+    EpollLoop(LLMService &llm_service);
     ~EpollLoop();
 
     bool init(int port);
@@ -53,6 +55,8 @@ private:
     ThreadPool thread_pool_;
 
     TimerManager timer_manager_;
+
+    LLMService &llm_service_;
 };
 
 #endif

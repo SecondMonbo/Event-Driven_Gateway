@@ -7,6 +7,10 @@
 #include <sys/stat.h>
 #include <fstream>
 #include <limits.h>
+#include "third_party/json.hpp"
+#include "llm/LLMService.hpp"
+
+using json = nlohmann::json;
 
 HttpChannel::HttpChannel(ConnectionContext ctx) : ctx_(ctx)
 {
@@ -267,6 +271,41 @@ ProcessResult HttpChannel::process(std::string &read_buffer)
             break;
         }
         default:
+            return ProcessResult::CLOSE;
+        }
+    }
+
+    // 检测是否是对大模型的访问
+    if (method_ == "POST" && path_ == "/v1/chat")
+    {
+        //  发送 SSE 握手头
+        std::string header = "HTTP/1.1 200 OK\r\n"
+                             "Content-Type: text/event-stream\r\n"
+                             "Cache-Control: no-cache\r\n"
+                             "Connection: keep-alive\r\n"
+                             "\r\n";
+        ctx_.conn->send_data(header);
+
+        // 解析 JSON 请求体
+        try
+        {
+            json req = json::parse(body_);
+            std::string session_id = req["session_id"];
+            std::string message = req["message"];
+
+            if (ctx_.llm_service)
+            {
+                ctx_.llm_service->handle_chat(session_id, message, ctx_);
+            }
+            else
+            {
+                ctx_.conn->send_data(generate_error_response(500));
+            }
+            return ProcessResult::CONTINUE;
+        }
+        catch (const std::exception &e)
+        {
+            ctx_.conn->send_data(generate_error_response(400));
             return ProcessResult::CLOSE;
         }
     }
