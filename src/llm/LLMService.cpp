@@ -82,42 +82,58 @@ void LLMService::process_stream_chunk(
     const ConnectionContext &ctx,
     std::string &accumulated)
 {
-    // 收到[done]则忽略
-    if (chunk.find("[DONE]") != std::string::npos)
-        return;
-
-    // 解析 data: {...} 格式
-    // eg: data: {"choices":[{"delta":{"content":"你好"}}]}\n\n
-    const std::string prefix = "data: ";
-    if (chunk.compare(0, prefix.size(), prefix) != 0)
+    std::istringstream stream(chunk);
+    std::string line;
+    while (std::getline(stream, line))
     {
-        // 不是 data 行则忽略
-        return;
-    }
+        // 去除末尾 \r （windows 风格换行）
+        if (!line.empty() && line.back() == '\r')
+        {
+            line.pop_back();
+        }
 
-    // 提取 JSON 部分
-    std::string json_str = chunk.substr(prefix.size());
-    // 去除末尾的换行与空格
+        proecess_sse_line(line, ctx, accumulated);
+    }
+}
+
+void LLMService::proecess_sse_line(
+    const std::string &line,
+    const ConnectionContext &ctx,
+    std::string &accumulated)
+{
+    if (line.empty())
+        return;
+
+    const std::string prefix = "data: ";
+    if (line.compare(0, prefix.size(), prefix) != 0)
+        return;
+
+    std::string json_str = line.substr(prefix.size());
+    // 去除空白字符
     while (!json_str.empty() && (json_str.back() == '\n' || json_str.back() == '\r' || json_str.back() == ' '))
     {
         json_str.pop_back();
     }
 
+    // 检查[Done]
+    if (json_str == "[DONE]")
+    {
+        std::cout << "Recived [DONE], finishind stream" << std::endl;
+        return;
+    }
+
     try
     {
         json data = json::parse(json_str);
-        // 提取content
         if (data.contains("choices") && data["choices"].is_array() && !data["choices"].empty())
         {
             auto &choice = data["choices"][0];
-            if (choice.contains("delta") && choice["delta"].contains("content"))
+            if (choice.contains("delta") && choice["delta"].contains("content") && !choice["delta"]["content"].is_null())
             {
                 std::string content = choice["delta"]["content"];
                 if (!content.empty())
                 {
-                    // 累计完整响应
                     accumulated += content;
-                    // 推送 SSE 事件
                     ctx.conn->send_data("data: " + content + "\n\n");
                 }
             }
@@ -125,8 +141,16 @@ void LLMService::process_stream_chunk(
     }
     catch (const std::exception &e)
     {
-        std::cerr << "JSON parse error: " << e.what() << std::endl;
-        send_error_event(ctx, "Failed to parse LLM reponse");
+        std::cerr << "JSON parse error" << e.what() << std::endl;
+        std::cerr << "Failed json_str: " << json_str << std::endl;
+        std::cerr.flush();
+        // 确认只发送一次错误事件
+        static bool error_sent = false;
+        if (!error_sent)
+        {
+            send_error_event(ctx, "Failed to parse LLM reponse");
+            error_sent = true;
+        }
     }
 }
 

@@ -13,7 +13,7 @@ class ThreadPool;
 class HttpChannel : public ProtocolHandler
 {
 public:
-    HttpChannel(ConnectionContext ctx); // 线程池集成新增
+    HttpChannel(const ConnectionContext &ctx); // 线程池集成新增
     ~HttpChannel() = default;
 
     ProcessResult process(std::string &read_buffer) override;
@@ -36,7 +36,7 @@ private:
     std::string body_;
     int content_length_ = 0;
 
-    ConnectionContext ctx_;
+    const ConnectionContext &ctx_;
 
     bool extract_line(std::string &buffer, std::string &line);
     bool parse_request_line(const std::string &line);

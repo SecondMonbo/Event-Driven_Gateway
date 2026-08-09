@@ -1,7 +1,8 @@
 #include "protocol/SseHandler.hpp"
+#include "llm/LLMService.hpp"
 #include <sstream>
 
-SseHandler::SseHandler(const ConnectionContext &ctx) : conn_(ctx.conn), thread_pool_(ctx.thread_pool), timer_manager_(ctx.loop.get_timer_manager())
+SseHandler::SseHandler(const ConnectionContext &ctx) : conn_(ctx.conn), ctx_(ctx)
 {
     // std::cout << "sse upgrade successfully\n";
 }
@@ -92,8 +93,8 @@ void SseHandler::start_heartbeat()
 {
     if (timer_id_ != 0)
         return;
-    timer_id_ = timer_manager_.add_timer(3000, [this]()
-                                         {
+    timer_id_ = ctx_.timer_manager.add_timer(3000, [this]()
+                                             {
         auto now = std::chrono::system_clock::now();
         auto t = std::chrono::system_clock::to_time_t(now);
         std::string time_str = std::ctime(&t);
@@ -110,7 +111,7 @@ void SseHandler::close()
     // 取消定时器
     if (timer_id_ != 0)
     {
-        timer_manager_.cancel_timer(timer_id_);
+        ctx_.timer_manager.cancel_timer(timer_id_);
         timer_id_ = 0;
     }
     // 清空待发送时间列表(释放内存)
@@ -119,6 +120,12 @@ void SseHandler::close()
         std::queue<std::string> empty;
         pending_events_.swap(empty);
     }
+}
+
+void SseHandler::send_error_event(const std::string &error_msg)
+{
+    std::string event = "data: {\"error\": \"" + error_msg + "\"}\n\n";
+    conn_->send_data(event);
 }
 
 ProcessResult SseHandler::process(std::string &read_buffer)
@@ -140,7 +147,21 @@ ProcessResult SseHandler::process(std::string &read_buffer)
 
         // 启动心跳
         // std::cout << "心跳启动\n";
-        start_heartbeat();
+        // start_heartbeat();
+    }
+
+    // 取出请求数据并调用 LLMService
+    std::string session_id = ctx_.pending_llm.session_id;
+    std::string message = ctx_.pending_llm.message;
+    ctx_.pending_llm.valid = false;
+    if (ctx_.llm_service)
+    {
+        ctx_.llm_service->handle_chat(session_id, message, ctx_);
+    }
+    else
+    {
+        send_error_event("LLM service not available");
+        return ProcessResult::CLOSE;
     }
 
     std::lock_guard<std::mutex> lock(queue_mutex_);

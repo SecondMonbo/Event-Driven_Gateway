@@ -15,5 +15,14 @@ struct ConnectionContext
     EpollLoop &loop;             // 主循环唤醒
     LLMService *llm_service;     // 大模型服务
 
+    // 临时存储 /v1/chat 请求数据，用于升级后的 SseHandler 使用
+    struct PendingLLMRequest
+    {
+        std::string session_id;
+        std::string message;
+        bool valid = false;
+    };
+    mutable PendingLLMRequest pending_llm;
+
     ConnectionContext(ClientConnection *c, ThreadPool &tp, TimerManager &tm, EpollLoop &l, LLMService &ls) : conn(c), thread_pool(tp), timer_manager(tm), loop(l), llm_service(&ls) {}
 };

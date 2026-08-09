@@ -44,7 +44,7 @@ public:
 
     void handle_chat(
         const std::string &session_id,
-        const std::string &messagr,
+        const std::string &message,
         const ConnectionContext &ctx);
 
 private:
@@ -58,6 +58,12 @@ private:
         const std::string &chunk,
         const ConnectionContext &ctx,
         std::string &accumulated_response);
+
+    // 按行处理数据，辅助解决粘包/分包问题
+    void proecess_sse_line(
+        const std::string &line,
+        const ConnectionContext &ctx,
+        std::string &accumulated);
 
     // 发送错误时间到客户端
     void send_error_event(const ConnectionContext &ctx, const std::string &error_msg);

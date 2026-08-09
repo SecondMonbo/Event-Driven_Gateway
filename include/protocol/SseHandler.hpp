@@ -32,6 +32,9 @@ public:
     // 关闭连接
     void close();
 
+    // 错误事件，直接发送
+    void send_error_event(const std::string &error_msg);
+
     // 用以测试的sse协议心跳计时器(3秒)
     void start_heartbeat();
 
@@ -39,7 +42,7 @@ public:
 
 private:
     ClientConnection *const conn_;
-    ThreadPool &thread_pool_;
+    const ConnectionContext &ctx_;
     bool handshake_sent_ = false;
     bool closed_ = false;
     uint64_t timer_id_ = 0; // 定时器 ID, 0 表示无效
@@ -48,7 +51,6 @@ private:
     std::queue<std::string> pending_events_;
     std::mutex queue_mutex_;
 
-    TimerManager &timer_manager_;
     // 辅助函数：生成SSE格式的字符串
     std::string format_sse_message(const std::string &data, const std::string &event_type, const std::string &id);
 };
