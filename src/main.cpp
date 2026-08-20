@@ -1,6 +1,8 @@
 #include "core/EpollLoop.hpp"
 #include "llm/SessionManager.hpp"
 #include "llm/LLMService.hpp"
+#include "tools/ToolRegistry.hpp"
+#include "tools/builtin/TimeTool.hpp"
 #include <iostream>
 
 int main()

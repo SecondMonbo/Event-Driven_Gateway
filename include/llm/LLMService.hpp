@@ -5,6 +5,7 @@
 #include "llm/SessionManager.hpp"
 #include "llm/HttpClient.hpp"
 #include "core/ConnectionContext.hpp"
+#include "tools/ToolExecutor.hpp"
 
 /**
  * @brief LLM 服务层：网关与 LLM 之间的“内部网关”
@@ -25,7 +26,7 @@ public:
      * @param session_manager 会话管理器引用 （由上层持有）
      */
 
-    explicit LLMService(SessionManager &session_manager);
+    explicit LLMService(SessionManager &session_manager, ToolRegistry &tool_registry);
 
     /**
      * @brief 处理聊天请求 （主入口）
@@ -71,4 +72,8 @@ private:
     // 依赖
     SessionManager &session_manager_;
     HttpClient http_client_;
+
+    // 工具调用成员
+    ToolRegistry &tool_registry_;
+    ToolExecutor tool_executor_;
 };

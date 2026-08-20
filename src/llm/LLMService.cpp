@@ -6,7 +6,7 @@
 
 using json = nlohmann::json;
 
-LLMService::LLMService(SessionManager &session_manager) : session_manager_(session_manager) {}
+LLMService::LLMService(SessionManager &session_manager, ToolRegistry &tool_regitry) : session_manager_(session_manager), tool_registry_(tool_regitry), tool_executor_(tool_regitry) {}
 
 // 辅助函数
 
@@ -128,6 +128,13 @@ void LLMService::proecess_sse_line(
         if (data.contains("choices") && data["choices"].is_array() && !data["choices"].empty())
         {
             auto &choice = data["choices"][0];
+
+            if (choice.contains("delta") && choice["delta"].contains("tool_calls"))
+            {
+                // 执行工具调用
+                auto result = tool_executor_.execute_from_json(data);
+            }
+
             if (choice.contains("delta") && choice["delta"].contains("content") && !choice["delta"]["content"].is_null())
             {
                 std::string content = choice["delta"]["content"];
