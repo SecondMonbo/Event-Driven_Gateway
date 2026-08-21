@@ -156,7 +156,7 @@ ProcessResult SseHandler::process(std::string &read_buffer)
     ctx_.pending_llm.valid = false;
     if (ctx_.llm_service)
     {
-        ctx_.llm_service->handle_chat(session_id, message, ctx_);
+        ctx_.llm_service->handle_chat_with_tools(session_id, message, ctx_);
     }
     else
     {

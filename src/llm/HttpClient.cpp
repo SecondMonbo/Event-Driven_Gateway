@@ -26,7 +26,8 @@ bool HttpClient::post(
     const std::string &body,
     std::function<void(const char *, size_t)> on_data,
     std::function<void(bool)> on_complete,
-    long timeout_sec)
+    long timeout_sec,
+    const std::unordered_map<std::string, std::string> &extra_headers)
 {
     if (!curl_)
     {
@@ -71,6 +72,21 @@ bool HttpClient::post(
         curl_easy_setopt(curl_, CURLOPT_HTTPHEADER, headers);
     }
 
+    // 添加额外头部行
+    for (const auto &[key, value] : extra_headers)
+    {
+        std::string header = key + ": " + value;
+        headers = curl_slist_append(headers, header.c_str());
+    }
+    curl_easy_setopt(curl_, CURLOPT_HTTPHEADER, headers);
+
+    std::cout << "=== HttpClient::post ===" << std::endl;
+    std::cout << "URL: " << url << std::endl;
+    for (const auto &[key, value] : extra_headers)
+    {
+        std::cout << "Header: " << key << ": " << value << std::endl;
+    }
+
     // 执行请求（阻塞直到完成）
     CURLcode res = curl_easy_perform(curl_);
 
@@ -84,7 +100,7 @@ bool HttpClient::post(
         std::cerr << "CURL error: " << curl_easy_strerror(res) << std::endl;
         ctx.success = false;
     }
-    else if (http_code >= 400)
+    if (http_code >= 400)
     {
         std::cerr << "HTTP error: " << http_code << std::endl;
         ctx.success = false;

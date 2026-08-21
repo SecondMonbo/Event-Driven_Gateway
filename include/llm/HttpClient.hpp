@@ -56,7 +56,8 @@ public:
         const std::string &body,
         std::function<void(const char *, size_t)> on_data,
         std::function<void(bool)> on_complete,
-        long timeout_sec = 60);
+        long timeout_sec = 60,
+        const std::unordered_map<std::string, std::string> &extra_headers = {});
 
 private:
     // libcurl句柄

@@ -1,5 +1,6 @@
 #include "tools/ToolExecutor.hpp"
 #include <stdexcept>
+#include <iostream>
 
 ToolExecutor::ToolExecutor(ToolRegistry &registry) : registry_(registry) {}
 
@@ -18,21 +19,66 @@ std::vector<ToolCall> ToolExecutor::parse_tool_calls(const json &data)
     }
 
     const auto &tool_calls = choice["delta"]["tool_calls"];
+    std::cout << "parse_tool_calls: found " << tool_calls.size() << " tool calls" << std::endl;
+
     for (const auto &tc : tool_calls)
     {
         ToolCall call;
+        // 打印完整 tc 结构，方便调试
+        std::cout << "tc dump: " << tc.dump() << std::endl;
+
         if (tc.contains("id"))
         {
-            call.id = tc["id"];
+            call.id = tc["id"].get<std::string>();
         }
-        if (tc.contains("function") && tc["function"].contains("name"))
+
+        if (tc.contains("function") && tc["function"].is_object())
         {
-            call.name = tc["function"]["name"];
+            const auto &func = tc["function"];
+            std::cout << "func dump: " << func.dump() << std::endl;
+
+            if (func.contains("name") && !func["name"].is_null())
+            {
+                call.name = func["name"].get<std::string>();
+                // 如果 name 为空，跳过该工具调用
+                if (call.name.empty())
+                {
+                    std::cerr << "Warning: empty tool name, skipping" << std::endl;
+                    continue;
+                }
+                std::cout << "extracted name: " << call.name << std::endl;
+            }
+            else
+            {
+                std::cerr << "Warning: function.name missing in tool_call" << std::endl;
+                continue;
+            }
+
+            if (func.contains("arguments") && !func["arguments"].is_null())
+            {
+                // arguments 可能是字符串，需要解析为 JSON
+                std::string args_str = func["arguments"].get<std::string>();
+                try
+                {
+                    call.arguments = json::parse(args_str);
+                }
+                catch (const std::exception &e)
+                {
+                    std::cerr << "Failed to parse arguments: " << e.what() << std::endl;
+                    // 如果解析失败，设为空对象
+                    call.arguments = json::object();
+                }
+            }
+            else
+            {
+                call.arguments = json::object();
+            }
         }
-        if (tc.contains("function") && tc["function"].contains("arguments"))
+        else
         {
-            call.arguments = json::parse(tc["function"]["arguments"].get<std::string>());
+            std::cerr << "Warning: tool_call missing 'function' field or not object" << std::endl;
         }
+
         calls.push_back(call);
     }
     return calls;

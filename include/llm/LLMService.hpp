@@ -48,6 +48,16 @@ public:
         const std::string &message,
         const ConnectionContext &ctx);
 
+    // 处理工具调用核心逻辑, 内部最大迭代次数默认为5
+    void handle_chat_with_tools(
+        const std::string &session_id,
+        const std::string &message,
+        const ConnectionContext &ctx,
+        int max_iterations = 5);
+
+    // 设置是否使用 DeepSeek（用于切换）
+    void set_use_deepseek(bool enable) { use_deepseek_ = enable; };
+
 private:
     // 辅助构造请求体 JSON
     std::string build_llm_request(
@@ -61,13 +71,20 @@ private:
         std::string &accumulated_response);
 
     // 按行处理数据，辅助解决粘包/分包问题
-    void proecess_sse_line(
+    void process_sse_line(
         const std::string &line,
         const ConnectionContext &ctx,
         std::string &accumulated);
 
     // 发送错误时间到客户端
     void send_error_event(const ConnectionContext &ctx, const std::string &error_msg);
+
+    // 工具调用相关
+    // 构建包含工具定义的请求
+    std::string build_llm_request_with_tools(
+        const std::vector<ChatMessage> &history,
+        const std::string &message,
+        bool enable_tools);
 
     // 依赖
     SessionManager &session_manager_;
@@ -76,4 +93,14 @@ private:
     // 工具调用成员
     ToolRegistry &tool_registry_;
     ToolExecutor tool_executor_;
+
+    // DeepSeek 集成
+    bool use_deepseek_ = false;
+
+    // DeepSeek API 调用
+    void call_deepseek_api(
+        const std::string &seesion_id,
+        const std::string &message,
+        const ConnectionContext &ctx,
+        bool enables_tools);
 };
