@@ -21,6 +21,9 @@
 ## 🏗️ 架构设计
 
 - 整体分层（网络层、协议层、业务层）
+- 网络层：事件循环EpollLoop
+- 协议层：抽象基类ProticolHandler,衍生http协议和sse协议
+- 业务层：集成简易的堆计时器，线程池，已经LLM代理的AgentLoop
 - 核心模块职责（EpollLoop、ClientConnection、SseHandler、LLMService 等）
 
 ## 🧩 关键模块实现
@@ -71,3 +74,7 @@
 - WebSocket 支持
 - RAG 集成
 - Docker 容器化
+
+##2026.9.26
+今天开始继续完善项目，计划实现多轮工具调用，形成一个真正的智能体网关
+在原有项目中，为了跑通流程，httpcilent使用的是curl_easy_perform()，同步阻塞意味着单次连接可能会阻塞整个网关，经考虑：将agent_loop以线程的形式使用，每次连接都将由线程池工作线程执行
