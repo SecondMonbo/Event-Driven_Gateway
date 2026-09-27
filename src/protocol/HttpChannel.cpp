@@ -151,7 +151,7 @@ std::string HttpChannel::get_mime_type(const std::string &path)
     return "application/octet-stream";
 }
 
-void HttpChannel::generate_response()
+bool HttpChannel::generate_response() // 返回false表示处理，发送过程失败
 {
     if (method_ == "GET")
     {
@@ -174,27 +174,37 @@ void HttpChannel::generate_response()
                                  (headers_["connection"] == "keep-alive" ? "keep-alive" : "close") +
                                  "\r\n"
                                  "\r\n";
-            ctx_.conn->send_data(header);
+            if (!ctx_.send_data(header))
+            {
+                return false;
+            }
             // 2.分块读取文件并发送
             std::ifstream file(file_path, std::ios::binary);
             if (!file.is_open())
             {
-                ctx_.conn->send_data(generate_error_response(404));
+                if (!ctx_.send_data(generate_error_response(404)))
+                {
+                    return false;
+                };
             }
             const size_t CHUNK_SIZE = 64 * 1024; // 64KB每块
             std::vector<char> buffer(CHUNK_SIZE);
             while (file.read(buffer.data(), CHUNK_SIZE) || file.gcount() > 0)
             {
                 size_t bytes_read = file.gcount();
-                ctx_.conn->send_data(std::string(buffer.data(), bytes_read));
+                if (!ctx_.send_data(std::string(buffer.data(), bytes_read)))
+                {
+                    return false;
+                };
             }
             file.close();
-            return;
         }
         else
         {
-            ctx_.conn->send_data(generate_error_response(404));
-            return;
+            if (!ctx_.send_data(generate_error_response(404)))
+            {
+                return false;
+            };
         }
     }
 
@@ -210,7 +220,10 @@ void HttpChannel::generate_response()
                            (headers_["connection"] == "keep-alive" ? "keep-alive" : "close") + "\r\n"
                                                                                                "\r\n" +
                            body;
-    ctx_.conn->send_data(response);
+    if (!ctx_.send_data(response))
+        return false;
+
+    return true;
 }
 
 void HttpChannel::reset()
@@ -259,7 +272,7 @@ ProcessResult HttpChannel::process(std::string &read_buffer)
             if (!parse_header_line(line))
             {
                 std::string error_reponse = generate_error_response(400);
-                ctx_.conn->send_data(error_reponse);
+                ctx_.send_data(error_reponse);
                 return ProcessResult::CLOSE;
             }
             break;
@@ -290,7 +303,10 @@ ProcessResult HttpChannel::process(std::string &read_buffer)
         }
         catch (const std::exception &e)
         {
-            ctx_.conn->send_data(generate_error_response(400));
+            if (!ctx_.send_data(generate_error_response(400)))
+            {
+                return ProcessResult::CLOSE;
+            };
             return ProcessResult::CLOSE;
         }
     }
@@ -310,7 +326,10 @@ ProcessResult HttpChannel::process(std::string &read_buffer)
     }
 
     // 生成并发送响应,由函数内部负责
-    generate_response();
+    if (!generate_response())
+    {
+        return ProcessResult::CLOSE;
+    };
 
     // Keep-Alive 处理
     bool keep_alive = false;

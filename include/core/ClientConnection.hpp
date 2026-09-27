@@ -8,6 +8,7 @@
 #include "core/ConnectionContext.hpp"
 
 class ThreadPool;
+class LLMService;
 
 enum class ProtocolType
 {
@@ -26,6 +27,15 @@ public:
     // 禁止拷贝
     ClientConnection(const ClientConnection &) = delete;
     ClientConnection &operator=(const ClientConnection &) = delete;
+
+    // 在 make_shared 之后调用，初始化 ctx_
+    void init_context();
+
+    // 获取上下文 (返回引用，确保 ctx_ 已初始化)
+    const ConnectionContext &get_context() const
+    {
+        return *ctx_;
+    }
 
     int fd() const { return fd_; }
     int id() const { return conn_id_; }
@@ -51,7 +61,7 @@ public:
     void wakeup() { loop_->wakeup(); };
 
     // 获取上下文
-    const ConnectionContext &get_context() const { return ctx_; };
+    const ConnectionContext &get_context() const { return *ctx_; };
 
 private:
     // C++按照声明顺序初始化！！！
@@ -59,14 +69,17 @@ private:
     int conn_id_;
     ThreadPool &thread_pool_;
     EpollLoop *const loop_;
+    LLMService &llm_service_;
+
     std::string read_buffer_;
     std::string write_buffer_;
 
     bool write_registered_ = false; // 是否已注册EPOLLOUT事件
     ProtocolType protocol_type_ = ProtocolType::UNKNOWN;
-    std::unique_ptr<ProtocolHandler> handler_;
 
-    ConnectionContext ctx_;
+    // 调整初始化顺序，先上下文，后协议，是为了析构时，使用上下文的协议会先析构避免悬垂
+    std::unique_ptr<ConnectionContext> ctx_; // 改为独占指针，确保协议层只有使用权，同时延迟初始化
+    std::unique_ptr<ProtocolHandler> handler_;
 };
 
 #endif

@@ -128,6 +128,8 @@ void EpollLoop::handle_accept()
 
         static int next_id = 1;
         auto conn = std::make_shared<ClientConnection>(client_fd, next_id++, thread_pool_, this, llm_service_);
+        conn->init_context(); // 初始化 ctx_
+
         connections_[client_fd] = conn;
         fd_events_[client_fd] = EPOLLIN | EPOLLET;
 

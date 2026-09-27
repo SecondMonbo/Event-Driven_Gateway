@@ -1,16 +1,32 @@
 #include "core/ClientConnection.hpp"
 
-#include <unistd.h>
 #include <cerrno>
 #include <iostream>
 #include <sys/socket.h>
+#include <unistd.h>
 
-#include "protocol/HttpChannel.hpp"
 #include "protocol/CustomLineHandler.hpp"
+#include "protocol/HttpChannel.hpp"
 #include "protocol/SseHandler.hpp"
 
-ClientConnection::ClientConnection(int fd, int id, ThreadPool &tp, EpollLoop *const loop, LLMService &llm_service) : fd_(fd), conn_id_(id), thread_pool_(tp), loop_(loop),
-                                                                                                                     ctx_(this, tp, loop->get_timer_manager(), *loop, llm_service) {}
+ClientConnection::ClientConnection(int fd, int id, ThreadPool &tp,
+                                   EpollLoop *const loop,
+                                   LLMService &llm_service)
+    : fd_(fd), conn_id_(id), thread_pool_(tp), loop_(loop),
+      llm_service_(llm_service)
+{
+    // ctx_ 将延迟初始化为共享指针
+}
+
+void ClientConnection::init_context()
+{
+    ctx_ = std::make_shared<ConnectionContext>(
+        weak_from_this(),
+        thread_pool_,
+        loop_->get_timer_manager(),
+        *loop_,
+        llm_service_);
+}
 
 ClientConnection::~ClientConnection()
 {
@@ -61,7 +77,8 @@ bool ClientConnection::on_readable()
             protocol_type_ = ProtocolType::HTTP;
             handler_ = std::make_unique<HttpChannel>(ctx_);
         }
-        else if (read_buffer_.find("PING|") == 0 || read_buffer_.find("CHAT|") == 0)
+        else if (read_buffer_.find("PING|") == 0 ||
+                 read_buffer_.find("CHAT|") == 0)
         {
             protocol_type_ = ProtocolType::CUSTOM_LINE;
             handler_ = std::make_unique<CustomLineHandler>(fd_, this);
@@ -167,7 +184,9 @@ void ClientConnection::send_data(const std::string &data)
     if (was_empty)
     {
         // 之前没有待发送数据，现在尝试立即发送
-        int n = ::send(fd_, write_buffer_.data(), write_buffer_.size(), MSG_DONTWAIT); // MSG_DONTWAIT表示发送不了就不阻塞直接返回，“::”表全局作用域，避免冲突
+        int n = ::send(
+            fd_, write_buffer_.data(), write_buffer_.size(),
+            MSG_DONTWAIT); // MSG_DONTWAIT表示发送不了就不阻塞直接返回，“::”表全局作用域，避免冲突
         if (n < 0)
         {
             if (errno == EAGAIN || errno == EWOULDBLOCK)
