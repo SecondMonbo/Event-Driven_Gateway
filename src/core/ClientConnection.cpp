@@ -20,7 +20,7 @@ ClientConnection::ClientConnection(int fd, int id, ThreadPool &tp,
 
 void ClientConnection::init_context()
 {
-    ctx_ = std::make_shared<ConnectionContext>(
+    ctx_ = std::make_unique<ConnectionContext>(
         weak_from_this(),
         thread_pool_,
         loop_->get_timer_manager(),
@@ -75,13 +75,13 @@ bool ClientConnection::on_readable()
         if (read_buffer_.find("GET ") == 0 || read_buffer_.find("POST ") == 0)
         {
             protocol_type_ = ProtocolType::HTTP;
-            handler_ = std::make_unique<HttpChannel>(ctx_);
+            handler_ = std::make_unique<HttpChannel>(*ctx_);
         }
         else if (read_buffer_.find("PING|") == 0 ||
                  read_buffer_.find("CHAT|") == 0)
         {
             protocol_type_ = ProtocolType::CUSTOM_LINE;
-            handler_ = std::make_unique<CustomLineHandler>(fd_, this);
+            handler_ = std::make_unique<CustomLineHandler>(fd_, *ctx_);
         }
         else
         {

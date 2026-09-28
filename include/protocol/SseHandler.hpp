@@ -27,21 +27,20 @@ public:
     void reset() override;
 
     // 外部调用:推送数据到SSE连接
-    void push_event(const std::string &data, const std::string &event_type = "", const std::string &id = "");
+    bool push_event(const std::string &data, const std::string &event_type = "", const std::string &id = "");
 
     // 关闭连接
     void close();
 
     // 错误事件，直接发送
-    void send_error_event(const std::string &error_msg);
+    bool send_error_event(const std::string &error_msg);
 
     // 用以测试的sse协议心跳计时器(3秒)
     void start_heartbeat();
 
-    void send_event(const std::string &data, const std::string &event_type, const std::string &id);
+    bool send_event(const std::string &data, const std::string &event_type, const std::string &id);
 
 private:
-    ClientConnection *const conn_;
     const ConnectionContext &ctx_;
     bool handshake_sent_ = false;
     bool closed_ = false;

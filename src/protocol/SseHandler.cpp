@@ -2,7 +2,7 @@
 #include "llm/LLMService.hpp"
 #include <sstream>
 
-SseHandler::SseHandler(const ConnectionContext &ctx) : conn_(ctx.conn), ctx_(ctx)
+SseHandler::SseHandler(const ConnectionContext &ctx) : ctx_(ctx)
 {
     // std::cout << "sse upgrade successfully\n";
 }
@@ -54,10 +54,10 @@ std::string SseHandler::format_sse_message(const std::string &data, const std::s
     return oss.str();
 }
 
-void SseHandler::send_event(const std::string &data, const std::string &event_type, const std::string &id)
+bool SseHandler::send_event(const std::string &data, const std::string &event_type, const std::string &id)
 {
     if (closed_)
-        return;
+        return false;
     if (!handshake_sent_)
     {
         std::string header = "HTTP/1.1 200 OK\r\n"
@@ -65,20 +65,27 @@ void SseHandler::send_event(const std::string &data, const std::string &event_ty
                              "Cache-Control: no-cache\r\n"
                              "Connection: keep-alive\r\n"
                              "\r\n";
-        conn_->send_data(header);
+        if (!ctx_.send_data(header))
+        {
+            return false;
+        }
         handshake_sent_ = true;
     }
 
     // 格式化并发送消息
     std::string message = format_sse_message(data, event_type, id);
     // 绕过队列，直接发送
-    conn_->send_data(message);
+    if (!ctx_.send_data(message))
+    {
+        return false;
+    }
+    return true;
 }
 
-void SseHandler::push_event(const std::string &data, const std::string &event_type, const std::string &id)
+bool SseHandler::push_event(const std::string &data, const std::string &event_type, const std::string &id)
 {
     if (closed_)
-        return;
+        return false;
 
     std::string message = format_sse_message(data, event_type, id);
 
@@ -86,7 +93,15 @@ void SseHandler::push_event(const std::string &data, const std::string &event_ty
         std::lock_guard<std::mutex> lock(queue_mutex_);
         pending_events_.push(std::move(message));
     }
-    conn_->wakeup();
+    if (auto conn = ctx_.get_conn())
+    {
+        conn->wakeup();
+    }
+    else
+    {
+        return false;
+    }
+    return true;
 }
 
 void SseHandler::start_heartbeat()
@@ -122,10 +137,14 @@ void SseHandler::close()
     }
 }
 
-void SseHandler::send_error_event(const std::string &error_msg)
+bool SseHandler::send_error_event(const std::string &error_msg)
 {
     std::string event = "data: {\"error\": \"" + error_msg + "\"}\n\n";
-    conn_->send_data(event);
+    if (!ctx_.send_data(event))
+    {
+        return false;
+    }
+    return true;
 }
 
 ProcessResult SseHandler::process(std::string &read_buffer)
@@ -142,7 +161,10 @@ ProcessResult SseHandler::process(std::string &read_buffer)
                              "Cache-Control: no-cache\r\n"
                              "Connection: keep-alive\r\n"
                              "\r\n";
-        conn_->send_data(header);
+        if (!ctx_.send_data(header))
+        {
+            return ProcessResult::CLOSE;
+        }
         handshake_sent_ = true;
 
         // 启动心跳
@@ -169,7 +191,10 @@ ProcessResult SseHandler::process(std::string &read_buffer)
     {
         std::string message = std::move(pending_events_.front());
         pending_events_.pop();
-        conn_->send_data(message);
+        if (!ctx_.send_data(message))
+        {
+            return ProcessResult::CLOSE;
+        }
     }
 
     return ProcessResult::CONTINUE;

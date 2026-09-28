@@ -60,9 +60,6 @@ public:
     };
     void wakeup() { loop_->wakeup(); };
 
-    // 获取上下文
-    const ConnectionContext &get_context() const { return *ctx_; };
-
 private:
     // C++按照声明顺序初始化！！！
     int fd_;

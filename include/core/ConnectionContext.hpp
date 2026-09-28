@@ -30,7 +30,7 @@ struct ConnectionContext
     ConnectionContext(std::weak_ptr<ClientConnection> c,
                       ThreadPool &tp,
                       TimerManager &tm, EpollLoop &l,
-                      LLMService &ls) : conn(c), thread_pool(tp), timer_manager(tm), loop(l), llm_service(&ls) {};
+                      LLMService &ls);
 
     // 获取共享指针
     std::shared_ptr<ClientConnection> get_conn() const
@@ -46,16 +46,5 @@ struct ConnectionContext
 
     // 便捷发送，内部处理空检查
     // 返回 true 表示发送成功，false 表示连接已断开
-    bool send_data(const std::string &data) const
-    {
-        if (auto c = conn.lock())
-        {
-            c->send_data(data);
-            return true;
-        }
-        else
-        {
-            return false;
-        }
-    }
+    bool send_data(const std::string &data) const;
 };

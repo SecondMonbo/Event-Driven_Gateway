@@ -1,8 +1,9 @@
 #pragma once
 
 #include "ProtocolHandler.hpp"
-#include "core/ClientConnection.hpp"
 #include <string>
+
+class ConnectionContext;
 
 class Message
 {
@@ -23,7 +24,7 @@ private:
 class CustomLineHandler : public ProtocolHandler
 {
 public:
-    CustomLineHandler(int conn_id, ClientConnection *conn);
+    CustomLineHandler(int conn_id, ConnectionContext &ctx);
     ProcessResult process(std::string &read_buffer) override;
     void reset() override;
 
@@ -34,5 +35,5 @@ public:
 
 private:
     int conn_id_;
-    ClientConnection *const conn_;
+    ConnectionContext &ctx_;
 };

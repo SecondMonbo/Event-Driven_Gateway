@@ -1,8 +1,9 @@
 #include "protocol/CustomLineHandler.hpp"
+#include "core/ConnectionContext.hpp"
 #include <ctime>
 #include <sstream>
 
-CustomLineHandler::CustomLineHandler(int conn_id, ClientConnection *conn) : conn_id_(conn_id), conn_(conn) {};
+CustomLineHandler::CustomLineHandler(int conn_id, ConnectionContext &ctx) : conn_id_(conn_id), ctx_(ctx) {};
 
 ProcessResult CustomLineHandler::process(std::string &read_buffer)
 {
@@ -11,7 +12,10 @@ ProcessResult CustomLineHandler::process(std::string &read_buffer)
     {
         Message msg = parse(conn_id_, line);
         std::string resp = dispatch(msg) + "\n";
-        conn_->send_data(resp);
+        if (!ctx_.send_data(resp))
+        {
+            return ProcessResult::CLOSE;
+        };
     }
     return ProcessResult::CONTINUE;
 }
