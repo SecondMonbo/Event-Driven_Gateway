@@ -18,7 +18,7 @@ class ConnectionContext;
  * @brief 推送类型
  */
 
-enum class PushType
+enum class ChunkType
 {
     CONTENT,    // 最终回答
     REASONING,  // 思考过程
@@ -30,8 +30,9 @@ enum class PushType
  *
  * LLMService 通过这个回调提交流式数据
  * 由 AgentLoop 注入，内部通过 ThreadPool::post_completion 投递到主线程
+ * 作为一个LLMService产出数据的渠道，同时确保流式推送的实时性
  */
-using PushCallback = std::function<void(PushType type, const std::string &data)>;
+using OutputCallback = std::function<void(ChunkType type, const std::string &data)>;
 
 /**
  * @brief 单次 LLM 调用的结果
@@ -59,7 +60,7 @@ enum class ModelBackend
  * 职责：
  *   - 构造请求体
  *   - 通过 HttpClient 调用本地或远程 LLM 服务
- *   - 解析 SSE 流：content/reasoning 通过 push 回调推送，tool_calls 累计返回
+ *   - 解析 SSE 流：content/reasoning 通过 emit 回调推送，tool_calls 累计返回
  */
 
 class LLMService
@@ -87,13 +88,13 @@ public:
      * @param session_id   会话 ID
      * @param message      用户消息 (仅首次非空)
      * @param enable_tools 是否携带工具定义
-     * @param push         推送回调 (由 AgentLoop 注入)
+     * @param emit         推送回调 (由 AgentLoop 注入)
      *@return LLMCallResult
      */
     LLMCallResult call(const std::string &session_id,
                        const std::string &message,
                        bool enable_tools,
-                       PushCallback push);
+                       OutputCallback emit);
 
 private:
     // 依赖
@@ -109,12 +110,12 @@ private:
     LLMCallResult call_deepseek(const std::string &session_id,
                                 const std::string &message,
                                 bool enable_tools,
-                                PushCallback &push);
+                                OutputCallback &emit);
 
     LLMCallResult call_llama(const std::string &session_id,
                              const std::string &message,
                              bool enable_tools,
-                             PushCallback &push);
+                             OutputCallback &emit);
 
     std::string build_request_body(const std::string &session_id,
                                    const std::string &message,
@@ -130,6 +131,6 @@ private:
 
     void process_sse_line(const std::string &line,
                           LLMCallResult &result,
-                          PushCallback &push,
+                          OutputCallback &emit,
                           std::unordered_map<int, ToolCallAccumulator> &tool_call_acc);
 };

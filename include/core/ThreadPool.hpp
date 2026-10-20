@@ -31,9 +31,9 @@ public:
 
     size_t worker_count() const { return workers_.size(); };
 
+    void post_completion(std::function<void()> callback); // 修改为 public 允许 AgentLoop 调用
 private:
     void worker_loop();
-    void post_completion(std::function<void()> callback);
 
     std::vector<std::thread> workers_;
     std::queue<std::function<void()>> task_;

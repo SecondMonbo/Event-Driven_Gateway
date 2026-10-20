@@ -3,13 +3,15 @@
 #include <string>
 #include <vector>
 #include <functional>
+#include <memory>
+
+#include "llm/LLMService.hpp"
 #include "core/ConnectionContext.hpp"
 #include "tools/ToolExecutor.hpp"
+#include "tools/ToolRegistry.hpp"
 
-// 前向声明
-class LLMService;
 class SessionManager;
-class ToolExecutor;
+class ThreadPool;
 
 /**
  * @brief Agent 运行状态
@@ -30,6 +32,7 @@ enum class AgentState
  * @brief Agent Loop -- 对话流程调度器
  *
  * 仅承担流程管理，具体任务将交由其他模块负责,为避免阻塞主线程，运行时将交由工作线程
+ * 数据推送将由 OutputCallback推送至ThreadPool
  *
  * 职责：
  *   1. 循环控制：决定是否继续调用 LLM 还是结束对话
@@ -41,12 +44,14 @@ enum class AgentState
  *   loop.run(session_id, message, ctx);
  */
 
-class AgentLoop
+// enble_shared_from_this 未来如果有异步回调可以用到
+class AgentLoop : public std::enable_shared_from_this<AgentLoop>
 {
 public:
     AgentLoop(LLMService &llm,
               ToolExecutor &executor,
-              SessionManager &session);
+              SessionManager &session,
+              ThreadPool &thread_pool);
     ~AgentLoop() = default;
 
     // 禁止拷贝，每个连接的会话独有
@@ -74,6 +79,7 @@ private:
     LLMService &llm_;
     ToolExecutor &executor_;
     SessionManager &session_;
+    ThreadPool &thread_pool_; // 作为资源被循环直接持有
 
     // 状态
     AgentState state_ = AgentState::IDLE;
@@ -87,7 +93,7 @@ private:
      * @param message    初始用户消息
      * @param ctx        连接上下文
      */
-    void execute_loop(const std::string &seesion_id,
+    void execute_loop(const std::string &session_id,
                       const std::string &message,
                       const ConnectionContext &ctx);
 
@@ -97,25 +103,28 @@ private:
      * @param session_id   会话 ID
      * @param message      用户消息 (仅首次非空)
      * @param enable_tools 是否携带工具定义
-     * @param ctx          连接上下文
+     * @param emit         内容推送
      * @return true        表示本轮有工具调用
      * @return false       表示本轮是最终回答
      */
-    bool call_llm(const std::string &session_id,
-                  const std::string &message,
-                  bool enable_tools,
-                  const ConnectionContext &ctx);
+    LLMCallResult call_llm(const std::string &session_id,
+                           const std::string &message,
+                           bool enable_tools,
+                           OutputCallback emit);
 
     /**
      * @brief  执行工具调用
      *
      * @param calls       工具调用列表
      * @param session_id  会话 ID (用于写回历史)
-     * @param ctx         连接上下文 (用于推送工具结果)
+     * @param emit        用于推送工具结果
      */
     void execute_tools(const std::vector<ToolCall> &calls,
                        const std::string &session_id,
-                       const ConnectionContext &ctx);
+                       OutputCallback emit);
+
+    // 构造推送回调
+    OutputCallback make_emit_callback(const ConnectionContext &ctx);
 
     /**
      * @brief 判断是否应该继续循环

@@ -14,7 +14,7 @@ LLMService::LLMService(SessionManager &session_manager,
                                                      tool_registry_(tool_regitry) {}
 
 // 主入口: 单次调用
-LLMCallResult LLMService::call(const std::string &session_id, const std::string &message, bool enable_tools, PushCallback push)
+LLMCallResult LLMService::call(const std::string &session_id, const std::string &message, bool enable_tools, OutputCallback push)
 {
     // 目前仅支持本地 llama 和远端 deepseel_api,后期扩展可以抽象改为注入
     if (backend_ == ModelBackend::DEEPSEEK_API)
@@ -69,7 +69,7 @@ std::string LLMService::build_request_body(const std::string &session_id, const 
 }
 
 // DeepSeek 调用
-LLMCallResult LLMService::call_deepseek(const std::string &session_id, const std::string &message, bool enable_tools, PushCallback &push)
+LLMCallResult LLMService::call_deepseek(const std::string &session_id, const std::string &message, bool enable_tools, OutputCallback &push)
 {
     LLMCallResult result;
     std::string body = build_request_body(session_id, message, enable_tools);
@@ -143,8 +143,13 @@ LLMCallResult LLMService::call_deepseek(const std::string &session_id, const std
 }
 
 // 本地 llama.cpp 调用，因本地模型不支持 tool_calls，仅占位，后续实现
-LLMCallResult LLMService::call_llama(const std::string &session_id, const std::string &message, bool enable_tools, PushCallback &push)
+LLMCallResult LLMService::call_llama(const std::string &session_id, const std::string &message, bool enable_tools, OutputCallback &push)
 {
+    // 置void消除编译警告
+    (void)session_id;
+    (void)message;
+    (void)enable_tools;
+    (void)push;
     // TODO: 与 call_deepseek 类似，只是 URL 和 header 不同
     LLMCallResult reslut;
     reslut.success = false;
@@ -153,7 +158,7 @@ LLMCallResult LLMService::call_llama(const std::string &session_id, const std::s
 }
 
 // 单行 SSE 解析
-void LLMService::process_sse_line(const std::string &line, LLMCallResult &result, PushCallback &push, std::unordered_map<int, ToolCallAccumulator> &tool_call_acc)
+void LLMService::process_sse_line(const std::string &line, LLMCallResult &result, OutputCallback &push, std::unordered_map<int, ToolCallAccumulator> &tool_call_acc)
 {
     // 空行跳过
     if (line.empty())
@@ -169,7 +174,7 @@ void LLMService::process_sse_line(const std::string &line, LLMCallResult &result
     std::string json_str = line.substr(prefix.size());
 
     // 去掉尾行空白
-    while (!json_str.empty() && json_str.back() == '\n' || json_str.back() == '\r' || json_str.back() == ' ')
+    while (!json_str.empty() && (json_str.back() == '\n' || json_str.back() == '\r' || json_str.back() == ' '))
     {
         json_str.pop_back();
     }
@@ -208,7 +213,7 @@ void LLMService::process_sse_line(const std::string &line, LLMCallResult &result
             if (!content.empty())
             {
                 result.content += content;
-                push(PushType::CONTENT, content);
+                push(ChunkType::CONTENT, content);
             }
         }
 
@@ -218,7 +223,7 @@ void LLMService::process_sse_line(const std::string &line, LLMCallResult &result
             std::string reasoning = delta["reasoning_content"].get<std::string>();
             if (!reasoning.empty())
             {
-                push(PushType::REASONING, reasoning);
+                push(ChunkType::REASONING, reasoning);
             }
         }
 
