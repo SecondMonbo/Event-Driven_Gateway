@@ -14,16 +14,16 @@ LLMService::LLMService(SessionManager &session_manager,
                                                      tool_registry_(tool_regitry) {}
 
 // 主入口: 单次调用
-LLMCallResult LLMService::call(const std::string &session_id, const std::string &message, bool enable_tools, OutputCallback push)
+LLMCallResult LLMService::call(const std::string &session_id, const std::string &message, bool enable_tools, OutputCallback emit)
 {
     // 目前仅支持本地 llama 和远端 deepseel_api,后期扩展可以抽象改为注入
     if (backend_ == ModelBackend::DEEPSEEK_API)
     {
-        return call_deepseek(session_id, message, enable_tools, push);
+        return call_deepseek(session_id, message, enable_tools, emit);
     }
     else
     {
-        return call_llama(session_id, message, enable_tools, push);
+        return call_llama(session_id, message, enable_tools, emit);
     }
 }
 
@@ -38,10 +38,44 @@ std::string LLMService::build_request_body(const std::string &session_id, const 
     auto history = session_manager_.get_history(session_id);
     for (const auto &msg : history)
     {
-        messages.push_back({{"role", msg.role},
-                            {"content", msg.content}});
-    }
+        json m;
+        m["role"] = msg.role;
 
+        if (msg.role == "assistant")
+        {
+            if (!msg.tool_calls.empty())
+            {
+                m["content"] = nullptr;
+                json tcs = json::array();
+                for (const auto &tc : msg.tool_calls)
+                {
+                    tcs.push_back({{"id", tc.id}, {"type", "function"}, {"function", {{"name", tc.name}, {"arguments", tc.arguments}}}});
+                }
+                m["tool_calls"] = tcs;
+            }
+            else
+            {
+                m["content"] = msg.content;
+            }
+
+            // DeepSeek V4 要求：如果模型返回 reasoning_content, 需要回传
+            if (!msg.reasoning_content.empty())
+            {
+                m["reasoning_content"] = msg.reasoning_content;
+            }
+        }
+        else if (msg.role == "tool")
+        {
+            m["content"] = msg.content;
+            m["tool_call_id"] = msg.tool_call_id; // 携带以关联对应的 assistant 调用
+        }
+        else
+        {
+            m["content"] = msg.content;
+        }
+
+        messages.push_back(std::move(m));
+    }
     // 追加当前用户消息 (后续轮次 message 为空)
     if (!message.empty())
     {
@@ -67,9 +101,8 @@ std::string LLMService::build_request_body(const std::string &session_id, const 
     }
     return request.dump();
 }
-
 // DeepSeek 调用
-LLMCallResult LLMService::call_deepseek(const std::string &session_id, const std::string &message, bool enable_tools, OutputCallback &push)
+LLMCallResult LLMService::call_deepseek(const std::string &session_id, const std::string &message, bool enable_tools, OutputCallback &emit)
 {
     LLMCallResult result;
     std::string body = build_request_body(session_id, message, enable_tools);
@@ -92,7 +125,7 @@ LLMCallResult LLMService::call_deepseek(const std::string &session_id, const std
         "https://api.deepseek.com/v1/chat/completions",
         body,
         // on_data: 按行拆分，逐行解析
-        [this, &result, &push, &tool_call_acc](const char *data, size_t len)
+        [this, &result, &emit, &tool_call_acc](const char *data, size_t len)
         {
             std::string chunk(data, len);
             std::istringstream stream(chunk);
@@ -104,7 +137,7 @@ LLMCallResult LLMService::call_deepseek(const std::string &session_id, const std
                 {
                     line.pop_back();
                 }
-                process_sse_line(line, result, push, tool_call_acc);
+                process_sse_line(line, result, emit, tool_call_acc);
             }
         },
         // on_complete
@@ -143,13 +176,13 @@ LLMCallResult LLMService::call_deepseek(const std::string &session_id, const std
 }
 
 // 本地 llama.cpp 调用，因本地模型不支持 tool_calls，仅占位，后续实现
-LLMCallResult LLMService::call_llama(const std::string &session_id, const std::string &message, bool enable_tools, OutputCallback &push)
+LLMCallResult LLMService::call_llama(const std::string &session_id, const std::string &message, bool enable_tools, OutputCallback &emit)
 {
     // 置void消除编译警告
     (void)session_id;
     (void)message;
     (void)enable_tools;
-    (void)push;
+    (void)emit;
     // TODO: 与 call_deepseek 类似，只是 URL 和 header 不同
     LLMCallResult reslut;
     reslut.success = false;
@@ -158,7 +191,7 @@ LLMCallResult LLMService::call_llama(const std::string &session_id, const std::s
 }
 
 // 单行 SSE 解析
-void LLMService::process_sse_line(const std::string &line, LLMCallResult &result, OutputCallback &push, std::unordered_map<int, ToolCallAccumulator> &tool_call_acc)
+void LLMService::process_sse_line(const std::string &line, LLMCallResult &result, OutputCallback &emit, std::unordered_map<int, ToolCallAccumulator> &tool_call_acc)
 {
     // 空行跳过
     if (line.empty())
@@ -213,7 +246,7 @@ void LLMService::process_sse_line(const std::string &line, LLMCallResult &result
             if (!content.empty())
             {
                 result.content += content;
-                push(ChunkType::CONTENT, content);
+                emit(ChunkType::CONTENT, content);
             }
         }
 
@@ -223,7 +256,8 @@ void LLMService::process_sse_line(const std::string &line, LLMCallResult &result
             std::string reasoning = delta["reasoning_content"].get<std::string>();
             if (!reasoning.empty())
             {
-                push(ChunkType::REASONING, reasoning);
+                result.reasoning_content += reasoning;
+                emit(ChunkType::REASONING, reasoning);
             }
         }
 

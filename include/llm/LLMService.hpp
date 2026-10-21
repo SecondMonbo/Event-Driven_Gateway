@@ -41,7 +41,8 @@ struct LLMCallResult
 {
     bool has_tool_calls = false;
     std::vector<ToolCall> tool_calls;
-    std::string content; // 累积的最终回答
+    std::string content;           // 累积的最终回答
+    std::string reasoning_content; // 累计思考过程
     bool success = true;
 };
 

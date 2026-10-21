@@ -50,24 +50,33 @@ LLMCallResult AgentLoop::call_llm(const std::string &session_id, const std::stri
     return llm_.call(session_id, message, enable_tools, emit);
 }
 
-void AgentLoop::execute_tools(const std::vector<ToolCall> &calls, const std::string &session_id, OutputCallback emit)
+void AgentLoop::execute_tools(const std::vector<ToolCall> &calls, const std::string &session_id, OutputCallback emit, const std::string &reasoning_content)
 {
     state_ = AgentState::EXECUTING_TOOLS;
 
+    // 1. 先保存 assintant 消息
+    ChatMessage assistant_msg;
+    assistant_msg.role = "assistant";
+    assistant_msg.content = "";
+    assistant_msg.reasoning_content = reasoning_content;
     for (const auto &call : calls)
     {
-        std::cout << "[AgentLoop] Executing tool: " << call.name << std::endl;
+        assistant_msg.tool_calls.push_back({call.id, call.name, call.arguments.dump()});
+    }
 
+    session_.append_message(session_id, assistant_msg);
+
+    // 2.依次执行工具，保存 tool 消息
+    for (const auto &call : calls)
+    {
         ToolResult result = executor_.execute_single(call);
-
-        // 推送客户端 (中间状态)
         emit(ChunkType::TOOL_RESULT, result.result);
 
-        // 保存到会话历史
-        // aasistant 消息：记录"模型决定调用工具"
-        session_.append_message(session_id, ChatMessage("assistant", "调用工具: " + call.name));
-        // tool 消息: 工具执行结果
-        session_.append_message(session_id, ChatMessage("tool", result.result));
+        ChatMessage tool_msg;
+        tool_msg.role = "tool";
+        tool_msg.tool_call_id = call.id; // 关联 assintant
+        tool_msg.content = result.result;
+        session_.append_message(session_id, tool_msg);
     }
 }
 
@@ -100,7 +109,7 @@ void AgentLoop::execute_loop(const std::string &session_id, const std::string &m
         // 3.有工具调用，执行工具，继续循环
         if (result.has_tool_calls)
         {
-            execute_tools(result.tool_calls, session_id, emit);
+            execute_tools(result.tool_calls, session_id, emit, result.reasoning_content);
             continue;
         }
 

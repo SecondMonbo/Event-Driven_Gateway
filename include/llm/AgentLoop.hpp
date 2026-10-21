@@ -121,7 +121,8 @@ private:
      */
     void execute_tools(const std::vector<ToolCall> &calls,
                        const std::string &session_id,
-                       OutputCallback emit);
+                       OutputCallback emit,
+                       const std::string &reasoning_content);
 
     // 构造推送回调
     OutputCallback make_emit_callback(const ConnectionContext &ctx);

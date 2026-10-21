@@ -12,14 +12,25 @@ SessionManager:会话管理器
 #include <mutex>
 #include <chrono>
 
+// 为了与 DeepSeek 对话，修订 ChatMessage 格式
+struct ToolcallData
+{
+    std::string id;
+    std::string name;
+    std::string arguments; // JSON 字符串
+};
+
 // 用于LLM对话的消息结构
 struct ChatMessage
 {
-    std::string role;    //"user","assistant","system"
-    std::string content; // 消息内容
+    std::string role;                     //"user","assistant","system"
+    std::string content;                  // 消息内容
+    std::vector<ToolcallData> tool_calls; // 仅assistant消息使用
+    std::string tool_call_id;             // 仅 tool 消息使用
+    std::string reasoning_content;
 
     ChatMessage() = default;
-    ChatMessage(const std::string &r, const std::string &c) : role(r), content(c) {};
+    ChatMessage(std::string r, std::string c) : role(r), content(c) {}
 };
 
 class SessionManager
