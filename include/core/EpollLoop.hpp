@@ -10,6 +10,7 @@
 class ClientConnection;
 class SessionManager;
 class LLMService;
+class ToolExecutor;
 
 class EpollLoop
 {
