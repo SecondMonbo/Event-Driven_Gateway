@@ -15,7 +15,7 @@ class ToolExecutor;
 class EpollLoop
 {
 public:
-    EpollLoop(LLMService &llm_service);
+    EpollLoop(LLMService &llm_service, ToolExecutor &tool_executor, SessionManager &session_manager);
     ~EpollLoop();
 
     bool init(int port);
@@ -54,10 +54,12 @@ private:
     static const int MAX_EVENTS = 1024;
 
     ThreadPool thread_pool_;
-
     TimerManager timer_manager_;
 
+    // 全局服务
     LLMService &llm_service_;
+    ToolExecutor &tool_executor_;
+    SessionManager &session_manager_;
 };
 
 #endif

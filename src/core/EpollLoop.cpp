@@ -1,5 +1,7 @@
 #include "core/EpollLoop.hpp"
 #include "core/ClientConnection.hpp"
+#include "llm/AgentLoop.hpp"
+
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -17,13 +19,13 @@ static int set_nonblocking(int fd)
     return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 }
 
-EpollLoop::EpollLoop(LLMService &llm_service) : epfd_(-1), listen_fd_(-1), wakeup_fd_(-1), thread_pool_(4), llm_service_(llm_service)
+EpollLoop::EpollLoop(LLMService &llm_service, ToolExecutor &tool_executor, SessionManager &session_manager) : epfd_(-1), listen_fd_(-1), wakeup_fd_(-1), thread_pool_(4), llm_service_(llm_service), tool_executor_(tool_executor), session_manager_(session_manager)
 {
     // 创建eventfd,初始值为0，非阻塞模式
     wakeup_fd_ = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
     if (wakeup_fd_ == -1)
     {
-        std::cerr << "eventfd";
+        std::cerr << "eventfd failed" << std::endl;
     }
 }
 
@@ -127,8 +129,15 @@ void EpollLoop::handle_accept()
         add_fd(client_fd, EPOLLIN | EPOLLET);
 
         static int next_id = 1;
-        auto conn = std::make_shared<ClientConnection>(client_fd, next_id++, thread_pool_, this, llm_service_);
-        conn->init_context(); // 初始化 ctx_
+        auto conn = std::make_shared<ClientConnection>(client_fd, next_id++, thread_pool_, this);
+        conn->init_context([this](const std::string &session_id, const std::string &message, const ConnectionContext &ctx)
+                           { auto agent = std::make_shared<AgentLoop>(llm_service_, tool_executor_, session_manager_, thread_pool_); 
+                            thread_pool_.enqueue_with_callback(
+                                [agent,session_id,message,ctx](){
+                                    agent->run(session_id,message,ctx);
+                                },
+                                [](){/*完成回调，暂空*/}
+                            ); }); // 初始化 ctx_,注入 chat_handler
 
         connections_[client_fd] = conn;
         fd_events_[client_fd] = EPOLLIN | EPOLLET;

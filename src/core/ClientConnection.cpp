@@ -10,22 +10,21 @@
 #include "protocol/SseHandler.hpp"
 
 ClientConnection::ClientConnection(int fd, int id, ThreadPool &tp,
-                                   EpollLoop *const loop,
-                                   LLMService &llm_service)
-    : fd_(fd), conn_id_(id), thread_pool_(tp), loop_(loop),
-      llm_service_(llm_service)
+                                   EpollLoop *const loop)
+    : fd_(fd), conn_id_(id), thread_pool_(tp), loop_(loop)
 {
     // ctx_ 将延迟初始化为共享指针
 }
 
-void ClientConnection::init_context()
+void ClientConnection::init_context(ConnectionContext::ChatHandler handler)
 {
     ctx_ = std::make_unique<ConnectionContext>(
         weak_from_this(),
         thread_pool_,
         loop_->get_timer_manager(),
-        *loop_,
-        llm_service_);
+        *loop_);
+
+    ctx_->chat_handler = std::move(handler);
 }
 
 ClientConnection::~ClientConnection()

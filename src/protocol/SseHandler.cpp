@@ -173,27 +173,15 @@ ProcessResult SseHandler::process(std::string &read_buffer)
     }
 
     // 取出请求数据并调用 LLMService
-    std::string session_id = ctx_.pending_llm.session_id;
-    std::string message = ctx_.pending_llm.message;
-    ctx_.pending_llm.valid = false;
-    if (ctx_.llm_service)
+    if (ctx_.pending_llm.valid)
     {
-        ctx_.llm_service->handle_chat_with_tools(session_id, message, ctx_);
-    }
-    else
-    {
-        send_error_event("LLM service not available");
-        return ProcessResult::CLOSE;
-    }
+        std::string session_id = ctx_.pending_llm.session_id;
+        std::string message = ctx_.pending_llm.message;
+        ctx_.pending_llm.valid = false;
 
-    std::lock_guard<std::mutex> lock(queue_mutex_);
-    while (!pending_events_.empty())
-    {
-        std::string message = std::move(pending_events_.front());
-        pending_events_.pop();
-        if (!ctx_.send_data(message))
+        if (ctx_.chat_handler)
         {
-            return ProcessResult::CLOSE;
+            ctx_.chat_handler(session_id, message, ctx_);
         }
     }
 

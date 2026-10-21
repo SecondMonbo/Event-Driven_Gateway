@@ -8,7 +8,6 @@
 #include "core/ConnectionContext.hpp"
 
 class ThreadPool;
-class LLMService;
 
 enum class ProtocolType
 {
@@ -21,7 +20,7 @@ enum class ProtocolType
 class ClientConnection : public std::enable_shared_from_this<ClientConnection>
 {
 public:
-    ClientConnection(int fd, int id, ThreadPool &tp, EpollLoop *const loop, LLMService &llm_service);
+    ClientConnection(int fd, int id, ThreadPool &tp, EpollLoop *const loop);
     ~ClientConnection();
 
     // 禁止拷贝
@@ -29,7 +28,7 @@ public:
     ClientConnection &operator=(const ClientConnection &) = delete;
 
     // 在 make_shared 之后调用，初始化 ctx_
-    void init_context();
+    void init_context(ConnectionContext::ChatHandler handler);
 
     // 获取上下文 (返回引用，确保 ctx_ 已初始化)
     const ConnectionContext &get_context() const
@@ -66,7 +65,6 @@ private:
     int conn_id_;
     ThreadPool &thread_pool_;
     EpollLoop *const loop_;
-    LLMService &llm_service_;
 
     std::string read_buffer_;
     std::string write_buffer_;
