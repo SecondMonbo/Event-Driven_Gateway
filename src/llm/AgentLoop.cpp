@@ -116,7 +116,7 @@ void AgentLoop::execute_loop(const std::string &session_id, const std::string &m
         // 4.无工具调用,且最终已在LLMService推送，保存并结束对话
         if (!result.content.empty())
         {
-            session_.append_message(session_id, ChatMessage("assitstant", result.content));
+            session_.append_message(session_id, ChatMessage("assistant", result.content));
         }
 
         state_ = AgentState::DONE;
