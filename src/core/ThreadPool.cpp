@@ -56,11 +56,13 @@ void ThreadPool::post_completion(std::function<void()> callback)
         return;
     }
     // 上锁提交任务
+    bool need_wakeup = false;
     {
         std::lock_guard<std::mutex> lock(completions_mutex_);
+        need_wakeup = completions_.empty(); // 只在队列有空边非空时唤醒，实现批量唤醒，避免频繁切换造成开销
         completions_.push(std::move(callback));
     }
-    if (wakeup_fn_)
+    if (need_wakeup && wakeup_fn_)
     {
         wakeup_fn_(); // 解锁后再唤醒，避免死锁
     }
