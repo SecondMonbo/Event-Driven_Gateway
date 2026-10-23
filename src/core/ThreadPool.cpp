@@ -55,8 +55,15 @@ void ThreadPool::post_completion(std::function<void()> callback)
         std::cerr << "Warning: trying to post empty completion callback" << std::endl;
         return;
     }
-    std::lock_guard<std::mutex> lock(completions_mutex_);
-    completions_.push(std::move(callback));
+    // 上锁提交任务
+    {
+        std::lock_guard<std::mutex> lock(completions_mutex_);
+        completions_.push(std::move(callback));
+    }
+    if (wakeup_fn_)
+    {
+        wakeup_fn_(); // 解锁后再唤醒，避免死锁
+    }
 }
 
 void ThreadPool::process_completions()

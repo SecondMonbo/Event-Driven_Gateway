@@ -32,6 +32,12 @@ public:
     size_t worker_count() const { return workers_.size(); };
 
     void post_completion(std::function<void()> callback); // 修改为 public 允许 AgentLoop 调用
+
+    void set_wakeup_callback(std::function<void()> fn)
+    {
+        wakeup_fn_ = std::move(fn);
+    }
+
 private:
     void worker_loop();
 
@@ -42,6 +48,8 @@ private:
 
     std::queue<std::function<void()>> completions_;
     std::mutex completions_mutex_;
+
+    std::function<void()> wakeup_fn_; // 唤醒回调
 
     std::atomic<bool> stop_;
 };
@@ -54,7 +62,7 @@ void ThreadPool::enqueue_with_callback(Task &&task, Callback &&callback)
     {
         using ResultType = decltype(task());
 
-        // 这是 C++17 引入的编译时条件语句。它的条件必须是一个编译期常量表达式（例如 true/false，或 std::is_void_v<...> 这种编译时求值的值）。
+        // C++17 引入的编译时条件语句。它的条件必须是一个编译期常量表达式（例如 true/false，或 std::is_void_v<...> 这种编译时求值的值）。
         // 如果条件为 true，编译器会编译并保留对应的分支（{ task(); ... }）。
         // 如果条件为 false，编译器会完全丢弃该分支（甚至不检查其语法正确性，但要求整体语法上合法，比如大括号内的语句不依赖不成立的模板参数）。
         if constexpr (std::is_void_v<ResultType>)

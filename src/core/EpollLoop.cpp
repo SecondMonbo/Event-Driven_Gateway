@@ -19,14 +19,20 @@ static int set_nonblocking(int fd)
     return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 }
 
-EpollLoop::EpollLoop(LLMService &llm_service, ToolExecutor &tool_executor, SessionManager &session_manager) : epfd_(-1), listen_fd_(-1), wakeup_fd_(-1), thread_pool_(4), llm_service_(llm_service), tool_executor_(tool_executor), session_manager_(session_manager)
+EpollLoop::EpollLoop(LLMService &llm_service, ToolExecutor &tool_executor,
+                     SessionManager &session_manager) : epfd_(-1), listen_fd_(-1), wakeup_fd_(-1), thread_pool_(4),
+                                                        llm_service_(llm_service), tool_executor_(tool_executor), session_manager_(session_manager)
 {
     // 创建eventfd,初始值为0，非阻塞模式
     wakeup_fd_ = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
     if (wakeup_fd_ == -1)
     {
-        std::cerr << "eventfd failed" << std::endl;
+        std::cerr << "wakeup eventfd failed" << std::endl;
     }
+
+    // 注入唤醒回调
+    thread_pool_.set_wakeup_callback([this]()
+                                     { wakeup(); });
 }
 
 EpollLoop::~EpollLoop()
