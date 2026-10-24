@@ -7,6 +7,7 @@
 #include <sys/stat.h>
 #include <fstream>
 #include <limits.h>
+#include <filesystem>
 #include "third_party/json.hpp"
 #include "llm/LLMService.hpp"
 
@@ -151,14 +152,29 @@ std::string HttpChannel::get_mime_type(const std::string &path)
     return "application/octet-stream";
 }
 
+// 目前方法较少，后期可以抽象重构为函数表分发
 bool HttpChannel::generate_response() // 返回false表示处理，发送过程失败
 {
     if (method_ == "GET")
     {
-        std::string base_dir = get_executable_dir() + "/../www";
-        std::string file_path = base_dir + path_;
-        if (path_ == "/")
-            file_path = base_dir + "/index.html";
+        namespace fs = std::filesystem;
+
+        fs::path www_root = fs::path(get_executable_dir()) / ".." / "www";
+        // 规范化根目录 (解析掉 .. 和符号链接)
+        fs::path root_canonical = fs::weakly_canonical(www_root);
+
+        // 构造请求路径
+        std::string req_path = (path_ == "/") ? "/index.html" : path_;
+        fs::path file_path = fs::weakly_canonical(www_root / req_path);
+
+        auto root_str = root_canonical.string();
+        auto file_str = file_path.string();
+        if (file_str.compare(0, root_str.size(), root_str) != 0)
+        {
+            // 越界访问，返回 403
+            ctx_.send_data(generate_error_response(403));
+            return true;
+        }
 
         struct stat st;
         if (stat(file_path.c_str(), &st) == 0 && S_ISREG(st.st_mode))
@@ -186,6 +202,7 @@ bool HttpChannel::generate_response() // 返回false表示处理，发送过程�
                 {
                     return false;
                 };
+                return false;
             }
             const size_t CHUNK_SIZE = 64 * 1024; // 64KB每块
             std::vector<char> buffer(CHUNK_SIZE);
@@ -198,14 +215,10 @@ bool HttpChannel::generate_response() // 返回false表示处理，发送过程�
                 };
             }
             file.close();
+            return true;
         }
-        else
-        {
-            if (!ctx_.send_data(generate_error_response(404)))
-            {
-                return false;
-            };
-        }
+        ctx_.send_data(generate_error_response(404));
+        return true;
     }
 
     std::string body = "Hello, HTTP!";
@@ -220,10 +233,8 @@ bool HttpChannel::generate_response() // 返回false表示处理，发送过程�
                            (headers_["connection"] == "keep-alive" ? "keep-alive" : "close") + "\r\n"
                                                                                                "\r\n" +
                            body;
-    if (!ctx_.send_data(response))
-        return false;
 
-    return true;
+    return ctx_.send_data(response);
 }
 
 void HttpChannel::reset()

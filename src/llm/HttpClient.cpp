@@ -80,12 +80,12 @@ bool HttpClient::post(
     }
     curl_easy_setopt(curl_, CURLOPT_HTTPHEADER, headers);
 
-    std::cout << "=== HttpClient::post ===" << std::endl;
-    std::cout << "URL: " << url << std::endl;
-    for (const auto &[key, value] : extra_headers)
-    {
-        std::cout << "Header: " << key << ": " << value << std::endl;
-    }
+    // std::cout << "=== HttpClient::post ===" << std::endl;
+    // std::cout << "URL: " << url << std::endl;
+    // for (const auto &[key, value] : extra_headers)
+    // {
+    //     std::cout << "Header: " << key << ": " << value << std::endl;
+    // }
 
     // 执行请求（阻塞直到完成）
     CURLcode res = curl_easy_perform(curl_);
