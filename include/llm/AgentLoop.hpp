@@ -136,4 +136,7 @@ private:
      * @brief 设置错误状态
      */
     void set_error(const std::string &reason);
+
+    // 终止函数
+    void emit_terminal(OutputCallback &emit, const std::string &error, bool &terminal_sent);
 };

@@ -39,6 +39,8 @@ public:
     // 获取计时器
     TimerManager &get_timer_manager() { return timer_manager_; };
 
+    void schedule_close(int fd);
+
 private:
     void add_fd(int fd, uint32_t events);
     void remove_fd(int fd);
@@ -52,6 +54,8 @@ private:
     std::unordered_map<int, std::shared_ptr<ClientConnection>> connections_;
     std::unordered_map<int, uint32_t> fd_events_;
     static const int MAX_EVENTS = 1024;
+
+    std::vector<int> pending_close_fds_; // fd 延迟关闭列表
 
     ThreadPool thread_pool_;
     TimerManager timer_manager_;

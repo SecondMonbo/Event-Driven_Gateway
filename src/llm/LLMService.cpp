@@ -114,6 +114,7 @@ LLMCallResult LLMService::call_deepseek(const std::string &session_id, const std
     {
         std::cerr << "[LLMService] DEEPSEEK_API_KEY not set" << std::endl;
         result.success = false;
+        result.error = "DEEPSEEK_API_KEY not set";
         return result;
     }
     headers["Authorization"] = "Bearer " + std::string(api_key);
@@ -121,7 +122,7 @@ LLMCallResult LLMService::call_deepseek(const std::string &session_id, const std
     // 流式工具调用累计器
     std::unordered_map<int, ToolCallAccumulator> tool_call_acc;
 
-    http_client_.post(
+    bool ok = http_client_.post(
         "https://api.deepseek.com/v1/chat/completions",
         body,
         // on_data: 按行拆分，逐行解析
@@ -147,7 +148,14 @@ LLMCallResult LLMService::call_deepseek(const std::string &session_id, const std
         },
         60, // timeout
         headers);
-
+    if (!ok)
+    {
+        result.success = false;
+        if (result.error.empty())
+        {
+            result.error = "DeepSeek request failed";
+        }
+    }
     // 合并累计器中的分块工具调用为完整的 ToolCall
     for (auto &[index, acc] : tool_call_acc)
     {

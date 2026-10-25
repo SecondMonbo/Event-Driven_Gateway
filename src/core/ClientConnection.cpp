@@ -19,10 +19,7 @@ ClientConnection::ClientConnection(int fd, int id, ThreadPool &tp,
 void ClientConnection::init_context(ConnectionContext::ChatHandler handler)
 {
     ctx_ = std::make_unique<ConnectionContext>(
-        weak_from_this(),
-        thread_pool_,
-        loop_->get_timer_manager(),
-        *loop_);
+        weak_from_this(), thread_pool_, loop_->get_timer_manager(), *loop_);
 
     ctx_->chat_handler = std::move(handler);
 }
@@ -173,9 +170,25 @@ void ClientConnection::handle_write()
     }
 }
 
+void ClientConnection::request_close()
+{
+    if (fd_ == -1 || close_requested_)
+        return;
+
+    close_requested_ = true;
+
+    if (write_buffer_.empty())
+    {
+        int fd = fd_;
+        close_connection();
+        loop_->schedule_close(fd);
+    }
+}
+
 void ClientConnection::send_data(const std::string &data)
 {
-    if (data.empty())
+
+    if (fd_ == -1 || close_requested_ || data.empty())
         return;
     bool was_empty = write_buffer_.empty();
     write_buffer_.append(data);

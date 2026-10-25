@@ -40,6 +40,9 @@ public:
 
     bool send_event(const std::string &data, const std::string &event_type, const std::string &id);
 
+    // 辅助函数：生成SSE格式的字符串
+    static std::string format_sse_message(const std::string &data, const std::string &event_type = "", const std::string &id = "");
+
 private:
     const ConnectionContext &ctx_;
     bool handshake_sent_ = false;
@@ -49,7 +52,4 @@ private:
     // 待发送事件队列
     std::queue<std::string> pending_events_;
     std::mutex queue_mutex_;
-
-    // 辅助函数：生成SSE格式的字符串
-    std::string format_sse_message(const std::string &data, const std::string &event_type, const std::string &id);
 };

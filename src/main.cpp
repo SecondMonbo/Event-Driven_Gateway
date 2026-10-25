@@ -8,6 +8,7 @@
 
 int main()
 {
+    curl_global_init(CURL_GLOBAL_DEFAULT);
     // 会话管理器 (全局单一实例)
     SessionManager session_manager;
 
@@ -27,5 +28,6 @@ int main()
         return 1;
     }
     loop.run();
+    curl_global_cleanup();
     return 0;
 }

@@ -163,13 +163,21 @@ bool HttpChannel::generate_response() // 返回false表示处理，发送过程�
         // 规范化根目录 (解析掉 .. 和符号链接)
         fs::path root_canonical = fs::weakly_canonical(www_root);
 
-        // 构造请求路径
-        std::string req_path = (path_ == "/") ? "/index.html" : path_;
-        fs::path file_path = fs::weakly_canonical(www_root / req_path);
+        // 构造请求路径(相对)
+        std::string rel = (path_ == "/") ? "index.html" : path_;
+        while (!rel.empty() && rel.front() == '/')
+            rel.erase(rel.begin());
+        std::error_code ec;
+        fs::path file_path = fs::weakly_canonical(www_root / rel, ec);
+        if (ec)
+        {
+            ctx_.send_data(generate_error_response(400));
+            return true;
+        }
 
         auto root_str = root_canonical.string();
         auto file_str = file_path.string();
-        if (file_str.compare(0, root_str.size(), root_str) != 0)
+        if (file_str != root_str && file_str.rfind(root_str + "/", 0) != 0)
         {
             // 越界访问，返回 403
             ctx_.send_data(generate_error_response(403));

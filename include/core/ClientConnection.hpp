@@ -59,6 +59,8 @@ public:
     };
     void wakeup() { loop_->wakeup(); };
 
+    void request_close(); // 用以刷新缓冲区后再关闭链接
+
 private:
     // C++按照声明顺序初始化！！！
     int fd_;
@@ -75,6 +77,8 @@ private:
     // 调整初始化顺序，先上下文，后协议，是为了析构时，使用上下文的协议会先析构避免悬垂
     std::unique_ptr<ConnectionContext> ctx_; // 改为独占指针，确保协议层只有使用权，同时延迟初始化
     std::unique_ptr<ProtocolHandler> handler_;
+
+    bool close_requested_ = false;
 };
 
 #endif

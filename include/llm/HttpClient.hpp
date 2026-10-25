@@ -31,8 +31,8 @@
 class HttpClient
 {
 public:
-    HttpClient();
-    ~HttpClient();
+    HttpClient() = default;
+    ~HttpClient() = default;
 
     // 禁止拷贝
     HttpClient(const HttpClient &) = delete;
@@ -60,9 +60,6 @@ public:
         const std::unordered_map<std::string, std::string> &extra_headers = {});
 
 private:
-    // libcurl句柄
-    CURL *curl_;
-
     // 内部上下文，用于在静态回调中传递用户数据
     struct CallbackContext
     {

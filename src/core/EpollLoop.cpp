@@ -1,15 +1,15 @@
-#include "core/EpollLoop.hpp"
 #include "core/ClientConnection.hpp"
+#include "core/EpollLoop.hpp"
 #include "llm/AgentLoop.hpp"
 
-#include <sys/socket.h>
-#include <netinet/in.h>
 #include <arpa/inet.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <cstring>
-#include <iostream>
 #include <cerrno>
+#include <cstring>
+#include <fcntl.h>
+#include <iostream>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 static int set_nonblocking(int fd)
 {
@@ -20,8 +20,10 @@ static int set_nonblocking(int fd)
 }
 
 EpollLoop::EpollLoop(LLMService &llm_service, ToolExecutor &tool_executor,
-                     SessionManager &session_manager) : epfd_(-1), listen_fd_(-1), wakeup_fd_(-1), thread_pool_(4),
-                                                        llm_service_(llm_service), tool_executor_(tool_executor), session_manager_(session_manager)
+                     SessionManager &session_manager)
+    : epfd_(-1), listen_fd_(-1), wakeup_fd_(-1), thread_pool_(4),
+      llm_service_(llm_service), tool_executor_(tool_executor),
+      session_manager_(session_manager)
 {
     // 创建eventfd,初始值为0，非阻塞模式
     wakeup_fd_ = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
@@ -95,6 +97,11 @@ bool EpollLoop::init(int port)
     return true;
 }
 
+void EpollLoop::schedule_close(int fd)
+{
+    pending_close_fds_.push_back(fd);
+}
+
 void EpollLoop::add_fd(int fd, uint32_t events)
 {
     epoll_event ev{};
@@ -135,20 +142,25 @@ void EpollLoop::handle_accept()
         add_fd(client_fd, EPOLLIN | EPOLLET);
 
         static int next_id = 1;
-        auto conn = std::make_shared<ClientConnection>(client_fd, next_id++, thread_pool_, this);
-        conn->init_context([this](const std::string &session_id, const std::string &message, const ConnectionContext &ctx)
-                           { auto agent = std::make_shared<AgentLoop>(llm_service_, tool_executor_, session_manager_, thread_pool_); 
-                            thread_pool_.enqueue_with_callback(
-                                [agent,session_id,message,ctx](){
-                                    agent->run(session_id,message,ctx);
-                                },
-                                [](){/*完成回调，暂空*/}
-                            ); }); // 初始化 ctx_,注入 chat_handler
+        auto conn = std::make_shared<ClientConnection>(client_fd, next_id++,
+                                                       thread_pool_, this);
+        conn->init_context([this](const std::string &session_id,
+                                  const std::string &message,
+                                  const ConnectionContext &ctx)
+                           {
+      auto agent = std::make_shared<AgentLoop>(llm_service_, tool_executor_,
+                                               session_manager_, thread_pool_);
+      thread_pool_.enqueue_with_callback(
+          [agent, session_id, message, ctx]() {
+            agent->run(session_id, message, ctx);
+          },
+          []() { /*完成回调，暂空*/ }); }); // 初始化 ctx_,注入 chat_handler
 
         connections_[client_fd] = conn;
         fd_events_[client_fd] = EPOLLIN | EPOLLET;
 
-        std::cout << "New connection fd=" << client_fd << ", id=" << conn->id() << std::endl;
+        std::cout << "New connection fd=" << client_fd << ", id=" << conn->id()
+                  << std::endl;
     }
 }
 
@@ -172,8 +184,9 @@ void EpollLoop::remove_connection(int fd)
     auto it = connections_.find(fd);
     if (it != connections_.end())
     {
-        connections_.erase(it);
         remove_fd(fd);
+        connections_.erase(it);
+        fd_events_.erase(fd);
         // 注意：ClientConnection 析构时会 close(fd)
     }
 }
@@ -241,6 +254,12 @@ void EpollLoop::run()
         }
         timer_manager_.process_expired_timers();
         thread_pool_.process_completions();
+
+        for (int fd : pending_close_fds_)
+        {
+            remove_connection(fd);
+        }
+        pending_close_fds_.clear();
     }
 }
 

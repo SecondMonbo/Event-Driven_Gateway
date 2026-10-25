@@ -20,9 +20,11 @@ class ConnectionContext;
 
 enum class ChunkType
 {
-    CONTENT,    // 最终回答
-    REASONING,  // 思考过程
-    TOOL_RESULT // 工具结果
+    CONTENT,     // 最终回答
+    REASONING,   // 思考过程
+    TOOL_RESULT, // 工具结果
+    ERROR,       // 报错信息
+    DONE         // 任务完成
 };
 
 /**
@@ -44,6 +46,7 @@ struct LLMCallResult
     std::string content;           // 累积的最终回答
     std::string reasoning_content; // 累计思考过程
     bool success = true;
+    std::string error; // 失败原因
 };
 
 /**

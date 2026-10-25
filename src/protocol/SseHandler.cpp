@@ -139,12 +139,12 @@ void SseHandler::close()
 
 bool SseHandler::send_error_event(const std::string &error_msg)
 {
-    std::string event = "data: {\"error\": \"" + error_msg + "\"}\n\n";
-    if (!ctx_.send_data(event))
+    if (closed_)
     {
         return false;
     }
-    return true;
+    std::string event = format_sse_message(error_msg, "error");
+    return ctx_.send_data(event);
 }
 
 ProcessResult SseHandler::process(std::string &read_buffer)
@@ -182,6 +182,16 @@ ProcessResult SseHandler::process(std::string &read_buffer)
         if (ctx_.chat_handler)
         {
             ctx_.chat_handler(session_id, message, ctx_);
+        }
+        else
+        {
+            send_error_event("chat handler not configured");
+            ctx_.send_data(format_sse_message("[DONE]", "done"));
+            if (auto conn = ctx_.get_conn())
+            {
+                conn->request_close();
+                return ProcessResult::CLOSE;
+            }
         }
     }
 

@@ -1,3 +1,4 @@
+#include "protocol/SseHandler.hpp"
 #include "llm/AgentLoop.hpp"
 #include "llm/SessionManager.hpp"
 #include "core/ThreadPool.hpp"
@@ -29,17 +30,22 @@ OutputCallback AgentLoop::make_emit_callback(const ConnectionContext &ctx)
             switch (type)
             {
             case ChunkType::CONTENT:
-                event = "data: "+data+"\n\n";
+                event = SseHandler::format_sse_message(data,"content");
                 break;
             case ChunkType::REASONING:
-            event = "event: reasoning\ndata: "+data+"\n\n";
-            break;
+                event = SseHandler::format_sse_message(data,"reasoning");
+                break;
             case ChunkType::TOOL_RESULT:
-            event = "event: tool_result\ndata: "+data+"\n\n";
-            
-            default:
+                event = SseHandler::format_sse_message(data,"tool_result");
+                break;
+            case ChunkType::ERROR:
+                event = SseHandler::format_sse_message(data,"error");
+                break;
+            case ChunkType::DONE:
+                event = SseHandler::format_sse_message(data,"done");
                 break;
             }
+            if(type == ChunkType::DONE) conn->request_close();
             conn->send_data(event); });
     };
 }
@@ -83,48 +89,68 @@ void AgentLoop::execute_tools(const std::vector<ToolCall> &calls, const std::str
 void AgentLoop::execute_loop(const std::string &session_id, const std::string &message, const ConnectionContext &ctx)
 {
     OutputCallback emit = make_emit_callback(ctx);
-
-    while (should_continue())
+    bool terminal_sent = false;
+    try
     {
-        ++iteration_;
-
-        // 第一轮携带用户消息；后续轮次 message 为空 (历史已包含)
-        std::string current_message = (iteration_ == 1) ? message : "";
-
-        // 1.调用 LLM
-        LLMCallResult result = call_llm(session_id, current_message, true, emit);
-
-        if (!result.success)
+        while (should_continue())
         {
-            set_error("LLM call failed");
+            ++iteration_;
+
+            // 第一轮携带用户消息；后续轮次 message 为空 (历史已包含)
+            std::string current_message = (iteration_ == 1) ? message : "";
+
+            // 1.调用 LLM
+            LLMCallResult result = call_llm(session_id, current_message, true, emit);
+
+            if (!result.success)
+            {
+                set_error("LLM call failed");
+                emit_terminal(emit, result.error.empty() ? "LLM call failed" : result.error, terminal_sent);
+                return;
+            }
+
+            // 2.第一轮成功后，保存用户信息(只保存一次)
+            if (iteration_ == 1 && !message.empty())
+            {
+                session_.append_message(session_id, ChatMessage("user", message));
+            }
+
+            // 3.有工具调用，执行工具，继续循环
+            if (result.has_tool_calls)
+            {
+                execute_tools(result.tool_calls, session_id, emit, result.reasoning_content);
+                continue;
+            }
+
+            // 4.无工具调用,且最终已在LLMService推送，保存并结束对话
+            if (!result.content.empty())
+            {
+                session_.append_message(session_id, ChatMessage("assistant", result.content));
+            }
+
+            state_ = AgentState::DONE;
+            std::cout << "[AgentLoop] Done after " << iteration_ << " iteration(s)" << std::endl;
             return;
         }
-
-        // 2.第一轮成功后，保存用户信息(只保存一次)
-        if (iteration_ == 1 && !message.empty())
-        {
-            session_.append_message(session_id, ChatMessage("user", message));
-        }
-
-        // 3.有工具调用，执行工具，继续循环
-        if (result.has_tool_calls)
-        {
-            execute_tools(result.tool_calls, session_id, emit, result.reasoning_content);
-            continue;
-        }
-
-        // 4.无工具调用,且最终已在LLMService推送，保存并结束对话
-        if (!result.content.empty())
-        {
-            session_.append_message(session_id, ChatMessage("assistant", result.content));
-        }
-
-        state_ = AgentState::DONE;
-        std::cout << "[AgentLoop] Done after " << iteration_ << " iteration(s)" << std::endl;
-        return;
     }
+    catch (const std::exception &e)
+    {
+        set_error(e.what());
+        emit_terminal(emit, std::string("Agent exception: ") + e.what(), terminal_sent);
+    }
+    catch (...)
+    {
+        set_error("unkown exception");
+        emit_terminal(emit, "Agent unknown exception", terminal_sent);
+    }
+    // 正常结束
+    state_ = AgentState::DONE;
+    emit_terminal(emit, "", terminal_sent);
+    return;
+
     // 达到最大轮次
     set_error("Max iterations reached");
+    emit_terminal(emit, "Max iterations reached", terminal_sent);
     emit(ChunkType::CONTENT, "\n[Error: 达到最大轮次]");
 }
 
@@ -147,4 +173,16 @@ void AgentLoop::set_error(const std::string &reason)
 {
     state_ = AgentState::ERROR;
     std::cerr << "[AgentLoop] Error: " << reason << std::endl;
+}
+
+void AgentLoop::emit_terminal(OutputCallback &emit, const std::string &error, bool &terminal_sent)
+{
+    if (terminal_sent)
+        return;
+    terminal_sent = true;
+    if (!error.empty())
+    {
+        emit(ChunkType::ERROR, error);
+    }
+    emit(ChunkType::DONE, "[DONE]");
 }
