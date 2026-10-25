@@ -45,8 +45,8 @@ OutputCallback AgentLoop::make_emit_callback(const ConnectionContext &ctx)
                 event = SseHandler::format_sse_message(data,"done");
                 break;
             }
-            if(type == ChunkType::DONE) conn->request_close();
-            conn->send_data(event); });
+             conn->send_data(event); 
+            if(type == ChunkType::DONE) conn->request_close(); });
     };
 }
 
@@ -130,28 +130,26 @@ void AgentLoop::execute_loop(const std::string &session_id, const std::string &m
 
             state_ = AgentState::DONE;
             std::cout << "[AgentLoop] Done after " << iteration_ << " iteration(s)" << std::endl;
+            emit_terminal(emit, "", terminal_sent);
             return;
         }
+        // 达到最大轮次
+        set_error("Max iterations reached");
+        emit_terminal(emit, "Max iterations reached", terminal_sent);
+        return;
     }
     catch (const std::exception &e)
     {
         set_error(e.what());
         emit_terminal(emit, std::string("Agent exception: ") + e.what(), terminal_sent);
+        return;
     }
     catch (...)
     {
         set_error("unkown exception");
         emit_terminal(emit, "Agent unknown exception", terminal_sent);
+        return;
     }
-    // 正常结束
-    state_ = AgentState::DONE;
-    emit_terminal(emit, "", terminal_sent);
-    return;
-
-    // 达到最大轮次
-    set_error("Max iterations reached");
-    emit_terminal(emit, "Max iterations reached", terminal_sent);
-    emit(ChunkType::CONTENT, "\n[Error: 达到最大轮次]");
 }
 
 // 入口

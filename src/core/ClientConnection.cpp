@@ -163,6 +163,12 @@ void ClientConnection::handle_write()
             loop_->remove_write_event(fd_);
             write_registered_ = false;
         }
+        if (close_requested_)
+        {
+            int fd = fd_;
+            close_connection();
+            loop_->schedule_close(fd);
+        }
     }
     else
     {
@@ -182,6 +188,11 @@ void ClientConnection::request_close()
         int fd = fd_;
         close_connection();
         loop_->schedule_close(fd);
+    }
+    else
+    {
+        loop_->add_write_event(fd_);
+        write_registered_ = true;
     }
 }
 

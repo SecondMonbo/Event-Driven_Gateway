@@ -190,7 +190,7 @@ ProcessResult SseHandler::process(std::string &read_buffer)
             if (auto conn = ctx_.get_conn())
             {
                 conn->request_close();
-                return ProcessResult::CLOSE;
+                return ProcessResult::CONTINUE;
             }
         }
     }
