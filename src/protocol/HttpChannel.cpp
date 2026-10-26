@@ -1,4 +1,3 @@
-#include "protocol/HttpChannel.hpp"
 #include <sstream>
 #include <iostream>
 #include <cctype>
@@ -8,8 +7,16 @@
 #include <fstream>
 #include <limits.h>
 #include <filesystem>
+
+#include "protocol/HttpChannel.hpp"
 #include "third_party/json.hpp"
 #include "llm/LLMService.hpp"
+
+namespace // 纯工具函数
+{
+    bool is_with_root(const std::filesystem::path &root, const std::filesystem::path &file);
+    std::string reason_phrase(int status);
+}
 
 using json = nlohmann::json;
 
@@ -36,6 +43,14 @@ bool HttpChannel::parse_request_line(const std::string &line)
     // 简单验证
     if (version_ != "HTTP/1.1")
         return false;
+
+    auto q = path_.find("?");
+    if (q != std::string::npos)
+    {
+        query_ = path_.substr(q + 1);
+        path_.erase(q);
+    }
+
     return true;
 }
 
@@ -70,6 +85,19 @@ bool HttpChannel::parse_header_line(const std::string &line)
             return false;
         }
     }
+
+    if (lower_key == "connection")
+    {
+        std::string v = value;
+        std::transform(v.begin(), v.end(), v.begin(), [](unsigned char c)
+                       { return std::tolower(c); });
+
+        if (v.find("close") != std::string::npos)
+            keep_alive_ = false;
+        else if (v.find("keep-alive") != std::string::npos)
+            keep_alive_ = true;
+    }
+
     headers_[lower_key] = value;
     return true;
 }
@@ -254,6 +282,8 @@ void HttpChannel::reset()
     headers_.clear();
     body_.clear();
     content_length_ = 0;
+    keep_alive_ = true;
+    query_.clear();
 }
 
 ProcessResult HttpChannel::process(std::string &read_buffer)

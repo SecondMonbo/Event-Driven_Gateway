@@ -42,14 +42,19 @@ public:
 
     // 辅助函数：生成SSE格式的字符串
     static std::string format_sse_message(const std::string &data, const std::string &event_type = "", const std::string &id = "");
+    static std::string chunk(const std::string &data);
+    static std::string chunk_end();
 
 private:
     const ConnectionContext &ctx_;
     bool handshake_sent_ = false;
     bool closed_ = false;
+    bool is_chat_ = false;
     uint64_t timer_id_ = 0; // 定时器 ID, 0 表示无效
 
     // 待发送事件队列
     std::queue<std::string> pending_events_;
     std::mutex queue_mutex_;
+
+    bool begin_stream();
 };

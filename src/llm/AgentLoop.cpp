@@ -45,8 +45,11 @@ OutputCallback AgentLoop::make_emit_callback(const ConnectionContext &ctx)
                 event = SseHandler::format_sse_message(data,"done");
                 break;
             }
-             conn->send_data(event); 
-            if(type == ChunkType::DONE) conn->request_close(); });
+             conn->send_data(SseHandler::chunk(event)); 
+            if(type == ChunkType::DONE) {
+                conn->send_data(SseHandler::chunk_end());
+                conn->request_close();
+            } });
     };
 }
 
