@@ -9,6 +9,32 @@
 #include "protocol/HttpChannel.hpp"
 #include "protocol/SseHandler.hpp"
 
+namespace
+{
+    bool looks_like_http_request(const std::string &buf)
+    {
+        auto line_end = buf.find("\r\n");
+        if (line_end == std::string::npos)
+        {
+            return false;
+        }
+
+        auto sp1 = buf.find(' ');
+        if (sp1 == std::string::npos || sp1 == 0)
+        {
+            return false;
+        }
+        auto sp2 = buf.find(' ', sp1 + 1);
+        if (sp2 == std::string::npos || sp2 >= line_end)
+        {
+            return false;
+        }
+
+        std::string version = buf.substr(sp2 + 1, line_end - sp2 - 1);
+        return version.rfind("HTTP/1.", 0) == 0;
+    }
+}
+
 ClientConnection::ClientConnection(int fd, int id, ThreadPool &tp,
                                    EpollLoop *const loop)
     : fd_(fd), conn_id_(id), thread_pool_(tp), loop_(loop)
@@ -68,16 +94,21 @@ bool ClientConnection::on_readable()
     // 协议检测（HTTP）
     if (protocol_type_ == ProtocolType::UNKNOWN && !read_buffer_.empty())
     {
-        if (read_buffer_.find("GET ") == 0 || read_buffer_.find("POST ") == 0)
+
+        if (read_buffer_.find("PING|") == 0 ||
+            read_buffer_.find("CHAT|") == 0)
+        {
+            protocol_type_ = ProtocolType::CUSTOM_LINE;
+            handler_ = std::make_unique<CustomLineHandler>(fd_, *ctx_);
+        }
+        else if (looks_like_http_request(read_buffer_))
         {
             protocol_type_ = ProtocolType::HTTP;
             handler_ = std::make_unique<HttpChannel>(*ctx_);
         }
-        else if (read_buffer_.find("PING|") == 0 ||
-                 read_buffer_.find("CHAT|") == 0)
+        else if (read_buffer_.find("\r\n") == std::string::npos)
         {
-            protocol_type_ = ProtocolType::CUSTOM_LINE;
-            handler_ = std::make_unique<CustomLineHandler>(fd_, *ctx_);
+            return false;
         }
         else
         {

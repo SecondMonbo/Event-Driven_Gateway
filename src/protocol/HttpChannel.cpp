@@ -14,8 +14,40 @@
 
 namespace // 纯工具函数
 {
-    bool is_with_root(const std::filesystem::path &root, const std::filesystem::path &file);
-    std::string reason_phrase(int status);
+    bool is_with_root(const std::filesystem::path &root, const std::filesystem::path &file)
+    {
+        std::string r = root.string();
+        std::string f = file.string();
+        return f == r || f.rfind(r + "/", 0) == 0;
+    }
+    std::string reason_phrase(int status_code)
+    {
+        std::string status_text;
+        switch (status_code)
+        {
+        case 200:
+            status_text = "OK";
+            break;
+        case 400:
+            status_text = "Bad Request";
+            break;
+        case 403:
+            status_text = "Forbidden";
+            break;
+        case 404:
+            status_text = "Not Found";
+            break;
+        case 405:
+            status_text = "Method Not Allowed";
+            break;
+        case 500:
+            status_text = "Internal Server Error";
+            break;
+        default:
+            status_text = "Error";
+        }
+        return status_text;
+    };
 }
 
 using json = nlohmann::json;
@@ -130,27 +162,165 @@ std::string HttpChannel::get_executable_dir()
     return exe_path.substr(0, exe_path.rfind('/'));
 }
 
+ProcessResult HttpChannel::handle_get()
+{
+    // 检测 /events 或 Accept: text/event-stream -> 升级
+    bool is_events = (path_ == "/events");
+    auto it = headers_.find("accept");
+    bool wants_sse = (it != headers_.end()) && (it->second.find("text/event-stream")) != std::string::npos;
+
+    if (is_events || wants_sse)
+    {
+        reset();
+        return ProcessResult::UPGRADE_SSE;
+    }
+
+    // 静态文件
+    bool ok = serve_static_file(path_ == "/" ? "index.html" : path_);
+    if (!ok)
+        return ProcessResult::CLOSE;
+
+    if (!keep_alive_)
+        return ProcessResult::CLOSE;
+
+    reset();
+    return ProcessResult::CONTINUE;
+}
+
+ProcessResult HttpChannel::handle_post()
+{
+    if (path_ == "/v1/chat")
+    {
+        try
+        {
+            json req = json::parse(body_);
+            ctx_.pending_llm.session_id = req.at("session_id").get<std::string>();
+            ctx_.pending_llm.message = req.at("message").get<std::string>();
+            ctx_.pending_llm.valid = true;
+
+            reset();
+            return ProcessResult::UPGRADE_SSE;
+        }
+        catch (...)
+        {
+            send_error_response(400);
+            return ProcessResult::CLOSE;
+        }
+    }
+
+    if (path_ == "/")
+    {
+        if (!send_simple_response(200, "text/plain", "Receive body: " + body_))
+            return ProcessResult::CLOSE;
+
+        if (!keep_alive_)
+            return ProcessResult::CLOSE;
+
+        reset();
+        return ProcessResult::CONTINUE;
+    }
+
+    return handle_no_allowed();
+}
+
+ProcessResult HttpChannel::handle_no_allowed()
+{
+    std::string body = "<h1>Method Not Allowed</h1>";
+    std::string resp = "HTTP/1.1 405 Method Not Allowed\r\n"
+                       "Allow: GET, POST\r\n"
+                       "Content-Type: text/html\r\n"
+                       "Content-Length: " +
+                       std::to_string(body.size()) + "\r\n"
+                                                     "Connection: close\r\n"
+                                                     "\r\n" +
+                       body;
+
+    ctx_.send_data(resp);
+    return ProcessResult::CLOSE;
+}
+
+bool HttpChannel::serve_static_file(const std::string &rel_path)
+{
+    namespace fs = std::filesystem;
+
+    fs::path www_root = fs::path(get_executable_dir()) / ".." / "www";
+    std::error_code ec;
+    fs::path root = fs::weakly_canonical(www_root, ec);
+    if (ec)
+        return send_error_response(500);
+
+    std::string rel = rel_path;
+    while (!rel.empty() && rel.front() == '/')
+    {
+        rel.erase(rel.begin());
+    }
+    if (rel.empty())
+        rel = "index.html";
+
+    fs::path file = fs::weakly_canonical(www_root / rel, ec);
+    if (ec)
+        return send_error_response(400);
+
+    if (!is_with_root(root, file))
+    {
+        return send_error_response(403);
+    }
+
+    struct stat st;
+    if (stat(file.c_str(), &st) != 0 || !S_ISREG(st.st_mode))
+        return send_error_response(404);
+
+    std::ifstream in(file, std::ios::binary);
+    if (!in)
+        return send_error_response(404);
+
+    std::string header = "HTTP/1.1 200 OK\r\n"
+                         "Content-Type: " +
+                         get_mime_type(file.string()) + "\r\n"
+                                                        "Content-Length: " +
+                         std::to_string(st.st_size) + "\r\n"
+                                                      "connection: " +
+                         (keep_alive_ ? "keep-alive" : "close") + "\r\n"
+                                                                  "\r\n";
+
+    if (!ctx_.send_data(header))
+        return false;
+
+    std::vector<char> buf(64 * 1024);
+    while (in.read(buf.data(), buf.size()) || in.gcount() > 0)
+    {
+        if (!ctx_.send_data(std::string(buf.data(), in.gcount())))
+            return false;
+    }
+
+    return true;
+}
+
+bool HttpChannel::send_error_response(int status)
+{
+    keep_alive_ = false;
+    return ctx_.send_data(generate_error_response(status));
+}
+
+bool HttpChannel::send_simple_response(int status, const std::string &content_type, const std::string &body)
+{
+    std::string resp = "HTTP/1.1 " + std::to_string(status) + " " +
+                       reason_phrase(status) + "\r\n"
+                                               "Content-Type: " +
+                       content_type + "\r\n"
+                                      "Content-Length: " +
+                       std::to_string(body.size()) + "\r\n"
+                                                     "Connection: " +
+                       (keep_alive_ ? "keep-alive" : "close") + "\r\n"
+                                                                "\r\n" +
+                       body;
+
+    return ctx_.send_data(resp);
+}
+
 std::string HttpChannel::generate_error_response(int status_code)
 {
-
-    std::string status_text;
-    switch (status_code)
-    {
-    case 400:
-        status_text = "Bad Request";
-        break;
-    case 404:
-        status_text = "Not Found";
-        break;
-    case 405:
-        status_text = "Method Not Allowed";
-        break;
-    case 500:
-        status_text = "Internal Server Error";
-        break;
-    default:
-        status_text = "Error";
-    }
+    std::string status_text = reason_phrase(status_code);
     std::string body = "<h1>" + status_text + "</h1>";
     std::string response = "HTTP/1.1 " + std::to_string(status_code) + " " + status_text + "\r\n"
                                                                                            "Content-Length: " +
@@ -178,99 +348,6 @@ std::string HttpChannel::get_mime_type(const std::string &path)
     if (it != mime_map.end())
         return it->second;
     return "application/octet-stream";
-}
-
-// 目前方法较少，后期可以抽象重构为函数表分发
-bool HttpChannel::generate_response() // 返回false表示处理，发送过程失败
-{
-    if (method_ == "GET")
-    {
-        namespace fs = std::filesystem;
-
-        fs::path www_root = fs::path(get_executable_dir()) / ".." / "www";
-        // 规范化根目录 (解析掉 .. 和符号链接)
-        fs::path root_canonical = fs::weakly_canonical(www_root);
-
-        // 构造请求路径(相对)
-        std::string rel = (path_ == "/") ? "index.html" : path_;
-        while (!rel.empty() && rel.front() == '/')
-            rel.erase(rel.begin());
-        std::error_code ec;
-        fs::path file_path = fs::weakly_canonical(www_root / rel, ec);
-        if (ec)
-        {
-            ctx_.send_data(generate_error_response(400));
-            return true;
-        }
-
-        auto root_str = root_canonical.string();
-        auto file_str = file_path.string();
-        if (file_str != root_str && file_str.rfind(root_str + "/", 0) != 0)
-        {
-            // 越界访问，返回 403
-            ctx_.send_data(generate_error_response(403));
-            return true;
-        }
-
-        struct stat st;
-        if (stat(file_path.c_str(), &st) == 0 && S_ISREG(st.st_mode))
-        {
-            // 引入写缓冲区，修改发送逻辑支持较大文件发送
-            // 1.发送响应头，不含body
-            std::string header = "HTTP/1.1 200 OK\r\n"
-                                 "Content-Type: " +
-                                 get_mime_type(file_path) + "\r\n"
-                                                            "Content-Length: " +
-                                 std::to_string(st.st_size) + "\r\n"
-                                                              "Connection: " +
-                                 (headers_["connection"] == "keep-alive" ? "keep-alive" : "close") +
-                                 "\r\n"
-                                 "\r\n";
-            if (!ctx_.send_data(header))
-            {
-                return false;
-            }
-            // 2.分块读取文件并发送
-            std::ifstream file(file_path, std::ios::binary);
-            if (!file.is_open())
-            {
-                if (!ctx_.send_data(generate_error_response(404)))
-                {
-                    return false;
-                };
-                return false;
-            }
-            const size_t CHUNK_SIZE = 64 * 1024; // 64KB每块
-            std::vector<char> buffer(CHUNK_SIZE);
-            while (file.read(buffer.data(), CHUNK_SIZE) || file.gcount() > 0)
-            {
-                size_t bytes_read = file.gcount();
-                if (!ctx_.send_data(std::string(buffer.data(), bytes_read)))
-                {
-                    return false;
-                };
-            }
-            file.close();
-            return true;
-        }
-        ctx_.send_data(generate_error_response(404));
-        return true;
-    }
-
-    std::string body = "Hello, HTTP!";
-    if (method_ == "POST")
-    {
-        body = "Received body: " + body_;
-    }
-    std::string response = "HTTP/1.1 200 OK\r\n"
-                           "Content-Length: " +
-                           std::to_string(body.size()) + "\r\n"
-                                                         "Connection: " +
-                           (headers_["connection"] == "keep-alive" ? "keep-alive" : "close") + "\r\n"
-                                                                                               "\r\n" +
-                           body;
-
-    return ctx_.send_data(response);
 }
 
 void HttpChannel::reset()
@@ -337,63 +414,10 @@ ProcessResult HttpChannel::process(std::string &read_buffer)
         }
     }
 
-    // 检测是否是对大模型的访问
-    if (method_ == "POST" && path_ == "/v1/chat")
-    {
-        // 解析 JSON 请求体
-        try
-        {
-            json req = json::parse(body_);
-            ctx_.pending_llm.session_id = req["session_id"];
-            ctx_.pending_llm.message = req["message"];
-            ctx_.pending_llm.valid = true;
-            reset();
-            return ProcessResult::UPGRADE_SSE;
-        }
-        catch (const std::exception &e)
-        {
-            if (!ctx_.send_data(generate_error_response(400)))
-            {
-                return ProcessResult::CLOSE;
-            };
-            return ProcessResult::CLOSE;
-        }
-    }
-
-    // 在生成普通响应之前，进行SSE检测
     if (method_ == "GET")
-    {
-        bool is_sse_path = (path_ == "/events");
-        auto accept_it = headers_.find("accept");
-        bool has_sse_accept = (accept_it != headers_.end() && accept_it->second.find("text/event-stream") != std::string::npos);
-        if (is_sse_path || has_sse_accept)
-        {
-            reset();
-            // std::cout << "SSE request detected, upgrading..." << std::endl;
-            return ProcessResult::UPGRADE_SSE;
-        }
-    }
+        return handle_get();
+    if (method_ == "POST")
+        return handle_post();
 
-    // 生成并发送响应,由函数内部负责
-    if (!generate_response())
-    {
-        return ProcessResult::CLOSE;
-    };
-
-    // Keep-Alive 处理
-    bool keep_alive = false;
-    auto it = headers_.find("connection");
-    if (it != headers_.end() && it->second == "keep-alive")
-        keep_alive = true;
-
-    if (keep_alive)
-    {
-        reset();
-        // 返回继续处理的信号，由clientconnection循环处理调用
-        return ProcessResult::CONTINUE;
-    }
-    else
-    {
-        return ProcessResult::CLOSE; // 关闭连接
-    }
+    return handle_no_allowed();
 }
