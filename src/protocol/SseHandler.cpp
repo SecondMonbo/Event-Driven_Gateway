@@ -189,8 +189,10 @@ ProcessResult SseHandler::process(std::string &read_buffer)
     {
         if (!begin_stream())
             return ProcessResult::CLOSE;
-        // if (!is_chat_)
-        //     start_heartbeat();
+
+        handshake_sent_ = true;
+        if (!is_chat_)
+            start_heartbeat();
     }
 
     // 取出请求数据并调用 LLMService

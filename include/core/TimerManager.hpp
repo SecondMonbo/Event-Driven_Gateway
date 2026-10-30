@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <unordered_set>
 #include <queue>
 #include <vector>
 #include <mutex>
@@ -12,7 +13,6 @@ struct TimerNode
     uint64_t expire_ms;   // 绝对时间（毫秒）
     uint64_t interval_ms; // 0 表示一次性任务
     std::function<void()> callback;
-    bool canceled = false;
 };
 
 // 比较器：改优先队列为最小堆（最早超时优先）
@@ -46,9 +46,15 @@ public:
     // 清理函数，避免堆积过多已取消节点
     void clean_canceled_timers();
 
+    // 唤醒注入
+    void set_wakeup_callback(std::function<void()> fn);
+
 private:
     std::priority_queue<TimerNode, std::vector<TimerNode>, TimerCompare> timers_;
     std::unordered_map<uint64_t, bool> canceled_map_; // 取消标记表，不立即删除，而是等到处理时跳过，即懒删除模式(Lazy Deletion)
     mutable std::mutex mutex_;
     uint64_t next_id_ = 1;
+
+    std::unordered_set<uint64_t> active_ids_;
+    std::function<void()> wakeup_fn_;
 };

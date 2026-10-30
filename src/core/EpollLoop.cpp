@@ -35,6 +35,10 @@ EpollLoop::EpollLoop(LLMService &llm_service, ToolExecutor &tool_executor,
     // 注入唤醒回调
     thread_pool_.set_wakeup_callback([this]()
                                      { wakeup(); });
+
+    // 计数器注入唤醒回调
+    timer_manager_.set_wakeup_callback([this]()
+                                       { wakeup(); });
 }
 
 EpollLoop::~EpollLoop()
