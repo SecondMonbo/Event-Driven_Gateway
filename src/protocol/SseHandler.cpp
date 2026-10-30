@@ -144,11 +144,17 @@ void SseHandler::start_heartbeat()
         return;
     timer_id_ = ctx_.timer_manager.add_timer(3000, [this]()
                                              {
+                                                std::cerr << "[heartbeat] tick" << std::endl;
+            if(closed_) return;
+            auto conn = ctx_.get_conn();
+            if(!conn){
+                close();
+            }
         auto now = std::chrono::system_clock::now();
         auto t = std::chrono::system_clock::to_time_t(now);
         std::string time_str = std::ctime(&t);
         time_str.pop_back();
-        push_event("Current time: "+time_str,"heartbeat",std::to_string(t)); }, 3000);
+        if(!push_event("Current time: "+time_str,"heartbeat")) return; }, 3000);
 }
 
 void SseHandler::close()
@@ -185,6 +191,9 @@ ProcessResult SseHandler::process(std::string &read_buffer)
 {
     (void)read_buffer; // SSE不需要读取客户端数据，将变量转为（void）类型，避免编译器unused variable()未使用变量警告
 
+    if (closed_)
+        return ProcessResult::CLOSE;
+
     if (!handshake_sent_)
     {
         if (!begin_stream())
@@ -215,6 +224,26 @@ ProcessResult SseHandler::process(std::string &read_buffer)
                 conn->send_data(SseHandler::chunk_end());
                 conn->request_close();
             }
+        }
+    }
+
+    while (true)
+    {
+        std::string event;
+        {
+            std::lock_guard<std::mutex> lock(queue_mutex_);
+            if (pending_events_.empty())
+            {
+                break;
+            }
+            event = std::move(pending_events_.front());
+            pending_events_.pop();
+        }
+
+        if (!ctx_.send_data(SseHandler::chunk(event)))
+        {
+            close();
+            return ProcessResult::CLOSE;
         }
     }
 

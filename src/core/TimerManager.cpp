@@ -26,7 +26,7 @@ uint64_t TimerManager::add_timer(uint64_t delay_ms,
         node.interval_ms = interval_ms;
         node.callback = std::move(callback);
 
-        need_wake == (timers_.empty() || node.expire_ms < timers_.top().expire_ms);
+        need_wake = (timers_.empty() || node.expire_ms < timers_.top().expire_ms);
 
         id = node.id;
         active_ids_.insert(id);
