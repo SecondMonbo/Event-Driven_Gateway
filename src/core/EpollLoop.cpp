@@ -235,10 +235,14 @@ void EpollLoop::run()
                 }
                 // 直接遍历所有连接处理
                 // 只会在有sse协议触发时出现，如果成为了性能瓶颈后续优化
+                std::vector<int> close_fd;
                 for (auto &pair : connections_)
                 {
-                    pair.second->flush();
+                    if (pair.second->flush() == ProcessResult::CLOSE)
+                        close_fd.push_back(pair.first);
                 }
+                for (int fd : close_fd)
+                    remove_connection(fd);
                 continue;
             }
 

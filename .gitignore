@@ -7,7 +7,6 @@ gateway
 
 .vscode/
 llama.cpp/
-todo.md
 
 # 临时文件
 *.swp

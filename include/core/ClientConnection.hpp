@@ -52,11 +52,7 @@ public:
     void register_write_event();             // 注册写事件
 
     // 唤醒主循环
-    void flush()
-    {
-        if (handler_)
-            handler_->process(read_buffer_);
-    };
+    ProcessResult flush();
     void wakeup() { loop_->wakeup(); };
 
     void request_close(); // 用以刷新缓冲区后再关闭链接

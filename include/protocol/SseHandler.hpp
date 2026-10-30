@@ -16,6 +16,8 @@ SSE（Server-Sent Events，服务器推送事件） 是一种基于 HTTP 的轻�
 
 class ThreadPool;
 
+static constexpr size_t MAX_PENDING_EVENTS = 64;
+
 class SseHandler : public ProtocolHandler
 {
 public:

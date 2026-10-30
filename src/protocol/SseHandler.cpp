@@ -125,6 +125,8 @@ bool SseHandler::push_event(const std::string &data, const std::string &event_ty
 
     {
         std::lock_guard<std::mutex> lock(queue_mutex_);
+        if (pending_events_.size() >= MAX_PENDING_EVENTS)
+            return false;
         pending_events_.push(std::move(message));
     }
     if (auto conn = ctx_.get_conn())
@@ -144,17 +146,17 @@ void SseHandler::start_heartbeat()
         return;
     timer_id_ = ctx_.timer_manager.add_timer(3000, [this]()
                                              {
-                                                std::cerr << "[heartbeat] tick" << std::endl;
             if(closed_) return;
             auto conn = ctx_.get_conn();
             if(!conn){
                 close();
+                return;
             }
         auto now = std::chrono::system_clock::now();
         auto t = std::chrono::system_clock::to_time_t(now);
         std::string time_str = std::ctime(&t);
         time_str.pop_back();
-        if(!push_event("Current time: "+time_str,"heartbeat")) return; }, 3000);
+        if(!push_event("Current time: "+time_str,"heartbeat")) close(); return; }, 3000);
 }
 
 void SseHandler::close()

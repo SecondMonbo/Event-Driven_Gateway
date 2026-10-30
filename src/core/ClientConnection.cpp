@@ -33,7 +33,7 @@ namespace
         std::string version = buf.substr(sp2 + 1, line_end - sp2 - 1);
         return version.rfind("HTTP/1.", 0) == 0;
     }
-}
+} // namespace
 
 ClientConnection::ClientConnection(int fd, int id, ThreadPool &tp,
                                    EpollLoop *const loop)
@@ -95,8 +95,7 @@ bool ClientConnection::on_readable()
     if (protocol_type_ == ProtocolType::UNKNOWN && !read_buffer_.empty())
     {
 
-        if (read_buffer_.find("PING|") == 0 ||
-            read_buffer_.find("CHAT|") == 0)
+        if (read_buffer_.find("PING|") == 0 || read_buffer_.find("CHAT|") == 0)
         {
             protocol_type_ = ProtocolType::CUSTOM_LINE;
             handler_ = std::make_unique<CustomLineHandler>(fd_, *ctx_);
@@ -182,7 +181,9 @@ void ClientConnection::handle_write()
             return;
         else
         {
+            int fd = fd_;
             close_connection();
+            loop_->schedule_close(fd);
             return;
         }
     }
@@ -205,6 +206,13 @@ void ClientConnection::handle_write()
     {
         write_buffer_.erase(0, n);
     }
+}
+
+ProcessResult ClientConnection::flush()
+{
+    if (handler_)
+        return handler_->process(read_buffer_);
+    return ProcessResult::CONTINUE;
 }
 
 void ClientConnection::request_close()
@@ -251,7 +259,9 @@ void ClientConnection::send_data(const std::string &data)
             }
             else
             {
+                int fd = fd_;
                 close_connection();
+                loop_->schedule_close(fd);
             }
             return;
         }
