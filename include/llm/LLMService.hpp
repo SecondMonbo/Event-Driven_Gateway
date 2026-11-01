@@ -28,7 +28,7 @@ enum class ChunkType
 };
 
 /**
- * @brief 推送回调
+ * @brief 输出回调
  *
  * LLMService 通过这个回调提交流式数据
  * 由 AgentLoop 注入，内部通过 ThreadPool::post_completion 投递到主线程
