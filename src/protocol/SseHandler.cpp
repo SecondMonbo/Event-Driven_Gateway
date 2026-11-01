@@ -156,7 +156,7 @@ void SseHandler::start_heartbeat()
         auto t = std::chrono::system_clock::to_time_t(now);
         std::string time_str = std::ctime(&t);
         time_str.pop_back();
-        if(!push_event("Current time: "+time_str,"heartbeat")) close(); return; }, 3000);
+        if(!push_event("Current time: "+time_str,"heartbeat")) {close(); }return; }, 3000);
 }
 
 void SseHandler::close()

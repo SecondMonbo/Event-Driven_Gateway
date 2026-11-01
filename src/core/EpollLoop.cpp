@@ -87,7 +87,7 @@ bool EpollLoop::init(int port)
         return false;
     }
 
-    epfd_ = epoll_create1(0);
+    epfd_ = epoll_create1(EPOLL_CLOEXEC);
     if (epfd_ < 0)
     {
         perror("epoll_create1");
@@ -131,8 +131,17 @@ void EpollLoop::handle_accept()
         int client_fd = accept(listen_fd_, (sockaddr *)&client_addr, &len);
         if (client_fd < 0)
         {
+            if (errno == EINTR)
+                continue;
+
             if (errno == EAGAIN || errno == EWOULDBLOCK)
                 break;
+
+            if (errno == EMFILE || errno == ENFILE)
+            {
+                std::cerr << "accept: too many open files" << std::endl;
+                break;
+            }
             perror("accept");
             break;
         }
@@ -214,6 +223,9 @@ void EpollLoop::run()
         int nfds = epoll_wait(epfd_, events, MAX_EVENTS, timeout_ms);
         if (nfds < 0)
         {
+            if (errno == EINTR)
+                continue;
+
             perror("epoll_wait");
             break;
         }
@@ -247,11 +259,22 @@ void EpollLoop::run()
             }
 
             // 普通I/O事件
-            if (events[i].events & EPOLLIN)
+            uint32_t ev = events[i].events;
+
+            if (ev & EPOLLIN)
             {
                 handle_read(fd);
             }
-            if (events[i].events & EPOLLOUT)
+            if (connections_.find(fd) == connections_.end())
+                continue; // 避免读事件连接移除
+
+            if (ev & (EPOLLERR | EPOLLHUP))
+            {
+                remove_connection(fd);
+                continue;
+            }
+
+            if (ev & EPOLLOUT)
             {
                 auto it = connections_.find(fd);
                 if (it != connections_.end())

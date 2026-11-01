@@ -60,6 +60,7 @@ bool ClientConnection::on_readable()
 {
     char buf[4096];
     bool need_close = false;
+    bool peer_closed = false;
 
     // 读取数据
     while (true)
@@ -76,7 +77,7 @@ bool ClientConnection::on_readable()
         else if (n == 0)
         {
             std::cout << "Client " << conn_id_ << " closed connection." << std::endl;
-            need_close = true;
+            peer_closed = true;
             break;
         }
         else
@@ -85,7 +86,7 @@ bool ClientConnection::on_readable()
         }
     }
 
-    if (need_close)
+    if (peer_closed && read_buffer_.empty())
     {
         close_connection();
         return true;
@@ -107,6 +108,9 @@ bool ClientConnection::on_readable()
         }
         else if (read_buffer_.find("\r\n") == std::string::npos)
         {
+            if (peer_closed)
+                request_close();
+
             return false;
         }
         else
@@ -151,7 +155,13 @@ bool ClientConnection::on_readable()
         }
     }
 
-    return need_close;
+    if (need_close || peer_closed)
+    {
+        request_close();
+        return false;
+    }
+
+    return false;
 }
 
 void ClientConnection::close_connection()
@@ -174,7 +184,7 @@ void ClientConnection::handle_write()
         }
         return;
     }
-    int n = ::send(fd_, write_buffer_.data(), write_buffer_.size(), MSG_DONTWAIT);
+    int n = ::send(fd_, write_buffer_.data(), write_buffer_.size(), MSG_DONTWAIT | MSG_NOSIGNAL);
     if (n < 0)
     {
         if (errno == EAGAIN || errno == EWOULDBLOCK)
@@ -246,9 +256,8 @@ void ClientConnection::send_data(const std::string &data)
     if (was_empty)
     {
         // 之前没有待发送数据，现在尝试立即发送
-        int n = ::send(
-            fd_, write_buffer_.data(), write_buffer_.size(),
-            MSG_DONTWAIT); // MSG_DONTWAIT表示发送不了就不阻塞直接返回，“::”表全局作用域，避免冲突
+        // MSG_NOSIGNAL: 客户端 RST 时，send 返回 EPIPE，避免给进程发 SIGPIPE 把服务打死。
+        int n = ::send(fd_, write_buffer_.data(), write_buffer_.size(), MSG_DONTWAIT | MSG_NOSIGNAL); // MSG_DONTWAIT表示发送不了就不阻塞直接返回，“::”表全局作用域，避免冲突
         if (n < 0)
         {
             if (errno == EAGAIN || errno == EWOULDBLOCK)
