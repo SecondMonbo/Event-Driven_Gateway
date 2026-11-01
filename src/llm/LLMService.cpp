@@ -122,23 +122,34 @@ LLMCallResult LLMService::call_deepseek(const std::string &session_id, const std
     // 流式工具调用累计器
     std::unordered_map<int, ToolCallAccumulator> tool_call_acc;
 
+    std::string pending_line;
     bool ok = http_client_.post(
         "https://api.deepseek.com/v1/chat/completions",
         body,
         // on_data: 按行拆分，逐行解析
-        [this, &result, &emit, &tool_call_acc](const char *data, size_t len)
+        [this, &result, &emit, &tool_call_acc, &pending_line](const char *data, size_t len)
         {
-            std::string chunk(data, len);
-            std::istringstream stream(chunk);
-            std::string line;
-            while (std::getline(stream, line))
+            pending_line.append(data, len);
+
+            size_t start = 0;
+            size_t pos;
+
+            while ((pos = pending_line.find('\n', start)) != std::string::npos)
             {
-                // 去掉行尾
+                std::string line = pending_line.substr(start, pos - start);
+                start = pos + 1;
+
+                // 处理 CRLF: 把行尾的 '\r' 去掉
                 if (!line.empty() && line.back() == '\r')
-                {
                     line.pop_back();
-                }
+
                 process_sse_line(line, result, emit, tool_call_acc);
+            }
+
+            // 保留未处理的碎片
+            if (start > 0)
+            {
+                pending_line.erase(0, start);
             }
         },
         // on_complete
@@ -148,6 +159,17 @@ LLMCallResult LLMService::call_deepseek(const std::string &session_id, const std
         },
         60, // timeout
         headers);
+
+    // 稳妥处理最后一块碎片
+    if (!pending_line.empty())
+    {
+        if (pending_line.back() == '\r')
+            pending_line.pop_back();
+
+        process_sse_line(pending_line, result, emit, tool_call_acc);
+        pending_line.clear();
+    }
+
     if (!ok)
     {
         result.success = false;
@@ -205,14 +227,18 @@ void LLMService::process_sse_line(const std::string &line, LLMCallResult &result
     if (line.empty())
         return;
 
-    // 只处理 "data: " 开头的行
-    const std::string prefix = "data: ";
+    // 只处理 "data: " 开头的行,兼容 "data:"不带空格
+    const std::string prefix = "data:";
     if (line.compare(0, prefix.size(), prefix) != 0)
     {
         return;
     }
 
-    std::string json_str = line.substr(prefix.size());
+    size_t pos = prefix.size();
+    if (pos < line.size() && line[pos] == ' ')
+        ++pos;
+
+    std::string json_str = line.substr(pos);
 
     // 去掉尾行空白
     while (!json_str.empty() && (json_str.back() == '\n' || json_str.back() == '\r' || json_str.back() == ' '))
