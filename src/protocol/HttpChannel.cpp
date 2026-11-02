@@ -11,6 +11,7 @@
 #include "protocol/HttpChannel.hpp"
 #include "third_party/json.hpp"
 #include "llm/LLMService.hpp"
+#include "core/Limits.hpp"
 
 namespace // 纯工具函数
 {
@@ -39,6 +40,12 @@ namespace // 纯工具函数
             break;
         case 405:
             status_text = "Method Not Allowed";
+            break;
+        case 413:
+            status_text = "Payload Too Large";
+            break;
+        case 431:
+            status_text = "Request Header Fields Too Large";
             break;
         case 500:
             status_text = "Internal Server Error";
@@ -361,6 +368,8 @@ void HttpChannel::reset()
     content_length_ = 0;
     keep_alive_ = true;
     query_.clear();
+    header_bytes_ = 0;
+    header_count_ = 0;
 }
 
 ProcessResult HttpChannel::process(std::string &read_buffer)
@@ -374,6 +383,16 @@ ProcessResult HttpChannel::process(std::string &read_buffer)
             std::string line;
             if (!extract_line(read_buffer, line))
                 return ProcessResult::CONTINUE;
+
+            // 请求行计数
+            if (line.size() + 2 > limits::MAX_HEADER_BYTES)
+            {
+                send_error_response(431);
+                return ProcessResult::CLOSE;
+            }
+            header_bytes_ = line.size() + 2;
+            header_count_ = 0;
+
             if (!parse_request_line(line))
             {
 
@@ -390,11 +409,28 @@ ProcessResult HttpChannel::process(std::string &read_buffer)
             if (line.empty())
             {
                 if (method_ == "POST" && content_length_ > 0)
+                {
+                    if (static_cast<std::size_t>(content_length_) > limits::MAX_BODY_BYTES)
+                    {
+                        send_error_response(413);
+                        return ProcessResult::CLOSE;
+                    }
                     state_ = PARSE_BODY;
+                }
                 else
                     state_ = PARSE_DONE;
                 break; // 关键：跳过下面的头部解析
             }
+
+            // header行计数
+            if (++header_count_ > limits::MAX_HEADER_COUNT ||
+                header_bytes_ + line.size() + 2 > limits::MAX_HEADER_BYTES)
+            {
+                send_error_response(431);
+                return ProcessResult::CLOSE;
+            }
+            header_bytes_ += line.size() + 2;
+
             if (!parse_header_line(line))
             {
                 std::string error_reponse = generate_error_response(400);

@@ -58,7 +58,10 @@ private:
     bool send_simple_response(int status, const std::string &content_type, const std::string &body);
 
     bool keep_alive_ = true;
-    std::string  query_;
+    std::string query_;
+
+    std::size_t header_bytes_ = 0;
+    std::size_t header_count_ = 0;
 };
 
 #endif

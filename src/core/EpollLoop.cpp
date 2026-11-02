@@ -1,5 +1,6 @@
 #include "core/ClientConnection.hpp"
 #include "core/EpollLoop.hpp"
+#include "core/Limits.hpp"
 #include "llm/AgentLoop.hpp"
 
 #include <arpa/inet.h>
@@ -10,6 +11,7 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <chrono>
 
 static int set_nonblocking(int fd)
 {
@@ -97,6 +99,9 @@ bool EpollLoop::init(int port)
     add_fd(listen_fd_, EPOLLIN | EPOLLET);
     add_fd(wakeup_fd_, EPOLLIN);
 
+    timer_manager_.add_timer(limits::IDLE_CHECK_INTERVAL_MS, [this]()
+                             { check_idle_connections(); }, limits::IDLE_CHECK_INTERVAL_MS);
+
     std::cout << "Server listening on port " << port << std::endl;
     return true;
 }
@@ -158,6 +163,18 @@ void EpollLoop::handle_accept()
 
         if (set_nonblocking(client_fd) < 0)
         {
+            close(client_fd);
+            continue;
+        }
+
+        if (connections_.size() >= limits::MAX_CONNECTIONS)
+        {
+            const char resp[] = "HTTP/1.1 503 Service Unavailable\r\n"
+                                "Content-Length: 0\r\n"
+                                "connection: close\r\n"
+                                "\r\n";
+
+            ::send(client_fd, resp, sizeof(resp) - 1, MSG_NOSIGNAL);
             close(client_fd);
             continue;
         }
@@ -346,4 +363,24 @@ void EpollLoop::remove_write_event(int fd)
         return;
     }
     fd_events_[fd] = new_events;
+}
+
+void EpollLoop::check_idle_connections()
+{
+    auto now = std::chrono::steady_clock::now();
+
+    std::vector<int> idle;
+    for (auto &[fd, conn] : connections_)
+    {
+        if (conn->idle_ms(now) > static_cast<std::int64_t>(limits::MAX_IDLE_MS))
+        {
+            idle.push_back(fd);
+        }
+    }
+    for (int fd : idle)
+    {
+        auto it = connections_.find(fd);
+        if (it != connections_.end())
+            it->second->request_close();
+    }
 }

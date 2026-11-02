@@ -71,6 +71,8 @@ private:
     void process_ready_fds();
     std::vector<int> ready_fds_;
     std::unordered_set<int> ready_set_;
+
+    void check_idle_connections();
 };
 
 #endif

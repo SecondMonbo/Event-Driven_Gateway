@@ -3,11 +3,14 @@
 
 #include <string>
 #include <memory>
+#include <chrono>
 #include "core/EpollLoop.hpp"
 #include "protocol/ProtocolHandler.hpp"
 #include "core/ConnectionContext.hpp"
 
 class ThreadPool;
+
+using Clock = std::chrono::steady_clock;
 
 enum class ProtocolType
 {
@@ -57,6 +60,8 @@ public:
 
     void request_close(); // 用以刷新缓冲区后再关闭链接
 
+    std::int64_t idle_ms(Clock::time_point now) const; // 统计空闲时间
+
 private:
     // C++按照声明顺序初始化！！！
     int fd_;
@@ -75,6 +80,9 @@ private:
     std::unique_ptr<ProtocolHandler> handler_;
 
     bool close_requested_ = false;
+
+    Clock::time_point last_active_ = Clock::now();
+    void touch();
 };
 
 #endif

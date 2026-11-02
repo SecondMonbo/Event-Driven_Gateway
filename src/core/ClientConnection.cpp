@@ -5,6 +5,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include "core/Limits.hpp"
 #include "protocol/CustomLineHandler.hpp"
 #include "protocol/HttpChannel.hpp"
 #include "protocol/SseHandler.hpp"
@@ -83,6 +84,16 @@ bool ClientConnection::on_readable()
         else
         {
             read_buffer_.append(buf, n);
+
+            if (read_buffer_.size() > limits::MAX_READ_BUFFER)
+            {
+                std::cerr << "[conn " << conn_id_ << "] read buffer too large\n";
+                int fd = fd_;
+                close_connection();
+                loop_->schedule_close(fd);
+                return true;
+            }
+            touch();
         }
     }
 
@@ -212,10 +223,12 @@ void ClientConnection::handle_write()
             close_connection();
             loop_->schedule_close(fd);
         }
+        touch();
     }
     else
     {
         write_buffer_.erase(0, n);
+        touch();
     }
 }
 
@@ -258,7 +271,19 @@ void ClientConnection::send_data(const std::string &data)
     if (fd_ == -1 || close_requested_ || data.empty())
         return;
     bool was_empty = write_buffer_.empty();
+
+    if (write_buffer_.size() + data.size() > limits::MAX_WRITE_BUFFER)
+    {
+        std::cerr << "[conn " << conn_id_ << "] write buffer too large\n";
+
+        int fd = fd_;
+        close_connection();
+        loop_->schedule_close(fd);
+        return;
+    }
+
     write_buffer_.append(data);
+    touch();
 
     if (was_empty)
     {
@@ -289,12 +314,21 @@ void ClientConnection::send_data(const std::string &data)
         if (n == (int)write_buffer_.size())
         {
             write_buffer_.clear();
+            touch();
         }
         else
         {
             write_buffer_.erase(0, n);
             loop_->add_write_event(fd_);
             write_registered_ = true;
+            touch();
         }
     }
+}
+
+void ClientConnection::touch() { last_active_ = Clock::now(); }
+
+std::int64_t ClientConnection::idle_ms(Clock::time_point now) const
+{
+    return std::chrono::duration_cast<std::chrono::milliseconds>(now - last_active_).count();
 }
