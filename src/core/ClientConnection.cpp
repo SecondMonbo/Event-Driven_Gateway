@@ -184,7 +184,8 @@ void ClientConnection::handle_write()
         }
         return;
     }
-    int n = ::send(fd_, write_buffer_.data(), write_buffer_.size(), MSG_DONTWAIT | MSG_NOSIGNAL);
+    int n = ::send(fd_, write_buffer_.data(), write_buffer_.size(),
+                   MSG_DONTWAIT | MSG_NOSIGNAL);
     if (n < 0)
     {
         if (errno == EAGAIN || errno == EWOULDBLOCK)
@@ -225,6 +226,12 @@ ProcessResult ClientConnection::flush()
     return ProcessResult::CONTINUE;
 }
 
+void ClientConnection::wakeup()
+{
+    if (fd_ != -1)
+        loop_->schedule_flush(fd_);
+}
+
 void ClientConnection::request_close()
 {
     if (fd_ == -1 || close_requested_)
@@ -256,8 +263,12 @@ void ClientConnection::send_data(const std::string &data)
     if (was_empty)
     {
         // 之前没有待发送数据，现在尝试立即发送
-        // MSG_NOSIGNAL: 客户端 RST 时，send 返回 EPIPE，避免给进程发 SIGPIPE 把服务打死。
-        int n = ::send(fd_, write_buffer_.data(), write_buffer_.size(), MSG_DONTWAIT | MSG_NOSIGNAL); // MSG_DONTWAIT表示发送不了就不阻塞直接返回，“::”表全局作用域，避免冲突
+        // MSG_NOSIGNAL: 客户端 RST 时，send 返回 EPIPE，避免给进程发 SIGPIPE
+        // 把服务打死。
+        int n = ::send(
+            fd_, write_buffer_.data(), write_buffer_.size(),
+            MSG_DONTWAIT |
+                MSG_NOSIGNAL); // MSG_DONTWAIT表示发送不了就不阻塞直接返回，“::”表全局作用域，避免冲突
         if (n < 0)
         {
             if (errno == EAGAIN || errno == EWOULDBLOCK)

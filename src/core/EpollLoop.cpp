@@ -101,9 +101,19 @@ bool EpollLoop::init(int port)
     return true;
 }
 
-void EpollLoop::schedule_close(int fd)
+void EpollLoop::schedule_close(int fd) { pending_close_fds_.push_back(fd); }
+
+void EpollLoop::schedule_flush(int fd)
 {
-    pending_close_fds_.push_back(fd);
+    if (fd < 0)
+        return;
+
+    // 同一 fd 只进入队列一次
+    if (!ready_set_.insert(fd).second)
+        return;
+
+    ready_fds_.push_back(fd);
+    wakeup(); // 记录后唤醒
 }
 
 void EpollLoop::add_fd(int fd, uint32_t events)
@@ -204,6 +214,27 @@ void EpollLoop::remove_connection(int fd)
     }
 }
 
+void EpollLoop::process_ready_fds()
+{
+    std::vector<int> ready;
+    ready.swap(ready_fds_);
+    ready_set_.clear();
+
+    for (int fd : ready)
+    {
+        auto it = connections_.find(fd);
+        if (it == connections_.end())
+        {
+            continue;
+        }
+
+        if (it->second->flush() == ProcessResult::CLOSE)
+        {
+            pending_close_fds_.push_back(fd);
+        }
+    }
+}
+
 void EpollLoop::wakeup()
 {
     uint64_t val = 1;
@@ -235,51 +266,42 @@ void EpollLoop::run()
             if (fd == listen_fd_)
             {
                 handle_accept();
-                continue;
             }
-
-            if (fd == wakeup_fd_)
+            else if (fd == wakeup_fd_)
             {
                 uint64_t val;
                 // write()会使计数器加1，循环使用read确保清空
                 while (read(wakeup_fd_, &val, sizeof(val)) > 0)
                 {
                 }
-                // 直接遍历所有连接处理
-                // 只会在有sse协议触发时出现，如果成为了性能瓶颈后续优化
-                std::vector<int> close_fd;
-                for (auto &pair : connections_)
+
+                process_ready_fds(); // 只处理就绪fd
+            }
+            else
+            {
+                // 普通I/O事件
+                uint32_t ev = events[i].events;
+
+                if (ev & EPOLLIN)
                 {
-                    if (pair.second->flush() == ProcessResult::CLOSE)
-                        close_fd.push_back(pair.first);
+                    handle_read(fd);
                 }
-                for (int fd : close_fd)
-                    remove_connection(fd);
-                continue;
-            }
+                if (connections_.find(fd) == connections_.end())
+                    continue; // 避免读事件连接移除
 
-            // 普通I/O事件
-            uint32_t ev = events[i].events;
-
-            if (ev & EPOLLIN)
-            {
-                handle_read(fd);
-            }
-            if (connections_.find(fd) == connections_.end())
-                continue; // 避免读事件连接移除
-
-            if (ev & (EPOLLERR | EPOLLHUP))
-            {
-                remove_connection(fd);
-                continue;
-            }
-
-            if (ev & EPOLLOUT)
-            {
-                auto it = connections_.find(fd);
-                if (it != connections_.end())
+                if (ev & (EPOLLERR | EPOLLHUP))
                 {
-                    it->second->handle_write();
+                    remove_connection(fd);
+                    continue;
+                }
+
+                if (ev & EPOLLOUT)
+                {
+                    auto it = connections_.find(fd);
+                    if (it != connections_.end())
+                    {
+                        it->second->handle_write();
+                    }
                 }
             }
         }

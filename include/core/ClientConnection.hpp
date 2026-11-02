@@ -53,7 +53,7 @@ public:
 
     // 唤醒主循环
     ProcessResult flush();
-    void wakeup() { loop_->wakeup(); };
+    void wakeup();
 
     void request_close(); // 用以刷新缓冲区后再关闭链接
 

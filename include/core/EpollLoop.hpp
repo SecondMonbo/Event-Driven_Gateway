@@ -2,6 +2,7 @@
 #define EPOLL_LOOP_HPP
 
 #include <unordered_map>
+#include <unordered_set>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include "core/ThreadPool.hpp"
@@ -41,6 +42,8 @@ public:
 
     void schedule_close(int fd);
 
+    void schedule_flush(int fd);
+
 private:
     void add_fd(int fd, uint32_t events);
     void remove_fd(int fd);
@@ -64,6 +67,10 @@ private:
     LLMService &llm_service_;
     ToolExecutor &tool_executor_;
     SessionManager &session_manager_;
+
+    void process_ready_fds();
+    std::vector<int> ready_fds_;
+    std::unordered_set<int> ready_set_;
 };
 
 #endif
