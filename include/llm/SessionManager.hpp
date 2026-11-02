@@ -60,4 +60,6 @@ private:
     std::mutex mutex_;
     int max_history_ = 100;       // 默认最多保存100条消息
     int max_idle_seconds_ = 3600; // 默认最多保存1小时
+
+    void trim_history(std::vector<ChatMessage> &history);
 };

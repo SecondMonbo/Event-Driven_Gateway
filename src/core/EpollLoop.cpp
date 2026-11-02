@@ -102,6 +102,9 @@ bool EpollLoop::init(int port)
     timer_manager_.add_timer(limits::IDLE_CHECK_INTERVAL_MS, [this]()
                              { check_idle_connections(); }, limits::IDLE_CHECK_INTERVAL_MS);
 
+    timer_manager_.add_timer(limits::SESSION_CLEANUP_INTERVAL_MS, [this]()
+                             { session_manager_.cleanup_expired_sessions(); }, limits::SESSION_CLEANUP_INTERVAL_MS);
+
     std::cout << "Server listening on port " << port << std::endl;
     return true;
 }

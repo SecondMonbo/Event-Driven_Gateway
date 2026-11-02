@@ -14,4 +14,6 @@ namespace limits
 
     constexpr std::uint64_t MAX_IDLE_MS = 60 * 1000;
     constexpr std::uint64_t IDLE_CHECK_INTERVAL_MS = 1000;
+
+    constexpr std::uint64_t SESSION_CLEANUP_INTERVAL_MS = 60 * 1000;
 }

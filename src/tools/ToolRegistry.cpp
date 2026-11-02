@@ -45,14 +45,7 @@ std::string ToolRegistry::execute(const std::string &name, const json &args)
     auto it = functions_.find(name);
     if (it == functions_.end())
     {
-        return "Error: Tool '" + name + "' not found";
+        throw std::runtime_error("Tool '" + name + "' not found"); // 用以执行器捕捉
     }
-    try
-    {
-        return it->second(args);
-    }
-    catch (const std::exception &e)
-    {
-        return "Error executing tool: " + std::string(e.what());
-    }
+    return it->second(args);
 }

@@ -1,4 +1,5 @@
 #include "llm/SessionManager.hpp"
+#include <algorithm>
 
 SessionManager::SessionManager(int max_history, int max_idle_seconds) : max_history_(max_history), max_idle_seconds_(max_idle_seconds) {};
 
@@ -22,7 +23,7 @@ void SessionManager::append_message(const std::string &session_id, const ChatMes
     // 裁剪避免超限
     if (vec.size() > static_cast<size_t>(max_history_))
     {
-        vec.erase(vec.begin(), vec.begin() + (vec.size() - max_history_));
+        trim_history(vec);
     }
     last_activity_[session_id] = std::chrono::steady_clock::now();
 };
@@ -66,5 +67,32 @@ void SessionManager::cleanup_expired_sessions()
 
 void SessionManager::set_max_history(int max_messages)
 {
+    std::lock_guard<std::mutex> lock(mutex_);
     max_history_ = max_messages;
+}
+
+void SessionManager::trim_history(std::vector<ChatMessage> &history)
+{
+    if (max_history_ <= 0 || history.size() <= static_cast<std::size_t>(max_history_))
+    {
+        return;
+    }
+    std::size_t excess = history.size() - static_cast<std::size_t>(max_history_);
+
+    // system永远放最前面
+    std::size_t system_count = 0;
+    while (system_count < history.size() && history[system_count].role == "system")
+        ++system_count;
+
+    std::size_t keep_from = std::max(system_count, excess);
+
+    while (keep_from < history.size() && history[keep_from].role != "user")
+    {
+        ++keep_from;
+    }
+
+    if (keep_from >= history.size())
+        return;
+
+    history.erase(history.begin() + system_count, history.begin() + keep_from);
 }

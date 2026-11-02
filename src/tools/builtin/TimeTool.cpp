@@ -19,7 +19,11 @@ void register_time_tool(ToolRegistry &registry)
             std::time_t t = std::chrono::system_clock::to_time_t(now);
 
             // 转换为本地时间并格式化
-            std::tm tm = *std::localtime(&t);
+            std::tm tm{};
+            if (localtime_r(&t, &tm) == nullptr)
+            {
+                return "time unavailable";
+            }
             std::ostringstream oss;
             oss << std::put_time(&tm, "%Y-%m-%d %H:%M:%S");
             return oss.str();
