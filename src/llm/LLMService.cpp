@@ -7,6 +7,19 @@
 #include <stdexcept>
 #include <cstdlib>
 
+namespace
+{
+    std::string deepseek_base_url()
+    {
+        const char *raw = std::getenv("DEEPSEEK_BASE_URL");
+        if (!raw || *raw == '\0')
+        {
+            return "https://api.deepseek.com/v1/chat/completions";
+        }
+        return raw;
+    }
+}
+
 using json = nlohmann::json;
 
 LLMService::LLMService(SessionManager &session_manager,
@@ -39,7 +52,15 @@ LLMCallResult LLMService::call(const std::string &session_id, const std::string 
 std::string LLMService::build_request_body(const std::string &session_id, const std::string &message, bool enable_tools)
 {
     json request;
-    request["model"] = (backend_ == ModelBackend::DEEPSEEK_API) ? "deepseek-v4-pro" : "Phi-3";
+    if (backend_ == ModelBackend::DEEPSEEK_API)
+    {
+        const char *model = std::getenv("DEEPSEEK_MODEL");
+        request["model"] = (model && *model) ? model : "deepseek-chat";
+    }
+    else
+    {
+        request["model"] = "Phi-3";
+    }
     request["stream"] = true;
 
     // 构造 messages
@@ -132,9 +153,11 @@ LLMCallResult LLMService::call_deepseek(const std::string &session_id, const std
     // 流式工具调用累计器
     std::unordered_map<int, ToolCallAccumulator> tool_call_acc;
 
+    const std::string url = deepseek_base_url();
+
     std::string pending_line;
     bool ok = http_client_.post(
-        "https://api.deepseek.com/v1/chat/completions",
+        url,
         body,
         // on_data: 按行拆分，逐行解析
         [this, &result, &emit, &tool_call_acc, &pending_line](const char *data, size_t len)

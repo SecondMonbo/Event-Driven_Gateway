@@ -5,6 +5,30 @@
 #include "tools/builtin/TimeTool.hpp"
 #include "tools/ToolExecutor.hpp"
 #include <iostream>
+#include <cstdlib>
+#include <cerrno>
+
+namespace
+{
+    int read_port()
+    {
+        const char *raw = std::getenv("GATEWAY_PORT");
+        if (!raw || *raw == '\0')
+            return 12010;
+
+        char *end = nullptr;
+        errno = 0;
+        long value = std::strtol(raw, &end, 10);
+
+        if (errno != 0 || end == raw || *end != '\0' || value <= 0 || value > 65535)
+        {
+            std::cerr << "Invalid GATEWAY_PORT: " << raw << std::endl;
+            std::exit(1);
+        }
+
+        return static_cast<int>(value);
+    }
+}
 
 int main()
 {
@@ -22,7 +46,9 @@ int main()
     llm_service.set_backend(ModelBackend::DEEPSEEK_API);
 
     EpollLoop loop(llm_service, tool_executor, session_manager);
-    if (!loop.init(12010))
+
+    int port = read_port();
+    if (!loop.init(port))
     {
         std::cerr << "Failed to initialize gateway" << std::endl;
         return 1;
