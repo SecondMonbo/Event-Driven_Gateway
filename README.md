@@ -24,7 +24,7 @@
 | 模块     | 能力                                                                            |
 | -------- | ------------------------------------------------------------------------------- |
 | 事件循环 | epoll ET + 非阻塞 I/O，读/写处理 `EAGAIN`，正确处理半关闭和 RST                 |
-| HTTP/1.1 | 请求行/头部/`Content-Length` Body 解析，GET/POST，Keep-Alive，静态文件，MIME    |
+| HTTP/1.1 | 请求行/头部/`Content-Length` Body 增量解析，支持跨 TCP 段；GET/POST，Keep-Alive，静态文件，MIME |
 | SSE      | chunked 传输、3 秒心跳、`content`/`reasoning`/`tool_result`/`error`/`done` 事件 |
 | LLM      | DeepSeek 流式接口，`reasoning_content`、增量 `tool_calls`、最多 10 轮工具循环   |
 | 工具     | 注册表 + 执行器，内置 `get_current_time`，错误/异常正确标记失败                 |
@@ -308,21 +308,30 @@ EpollLoop
 - `EPOLLOUT` 到达后继续发送，清空后取消写事件；
 - 发送使用 `MSG_NOSIGNAL`，避免客户端 RST 触发 SIGPIPE。
 
-### 2. 连接生命周期
+### 2. HTTP 增量解析与 TCP 分包
+
+- 请求行、header、body 都按增量方式解析，不假设一次 `recv()` 能收到完整请求；
+- 当前帧不完整时返回 `ProcessResult::NEED_MORE`，数据保留在 `read_buffer_`，等待下一次 `EPOLLIN`；
+- `CONTINUE` 只表示“一个完整请求处理完，连接可以继续”，避免和“数据不足”混淆；
+- 集成测试覆盖请求行、header、body、自定义行协议跨 TCP 段到达的场景。
+
+> 这里修过一个典型 bug：早期 `CONTINUE` 同时表示“请求完成”和“等待更多数据”，半行 header 会让单线程事件循环在 `process()` 上忙等，CPU 打满且其他连接无法处理。
+
+### 3. 连接生命周期
 
 - `EpollLoop` 用 `unordered_map<int, shared_ptr<ClientConnection>>` 持有连接；
 - `ConnectionContext` 用 `weak_ptr<ClientConnection>` 反向引用，避免循环；
 - `ClientConnection` 用 `unique_ptr` 持有 `ConnectionContext` 和当前 `ProtocolHandler`；
 - 协议升级 SSE 时替换 handler，旧 handler 先析构，ctx 后析构。
 
-### 3. 线程池与完成队列
+### 4. 线程池与完成队列
 
 - 阻塞的 LLM/工具调用交给 worker；
 - 完成回调通过 `ThreadPool::post_completion` 回主线程；
 - 回调捕获 `weak_ptr<ClientConnection>`，客户端断开后自动丢弃；
 - 事件循环用 eventfd 唤醒，不轮询。
 
-### 4. 定时器
+### 5. 定时器
 
 - `TimerManager` 使用最小堆 + `epoll_wait` 超时；
 - 回调在锁外执行，避免回调内 `add_timer/cancel_timer` 死锁；
@@ -330,7 +339,7 @@ EpollLoop
 - 空闲连接检查每 1 秒一次，超过 60 秒关闭；
 - Session 清理每 60 秒一次。
 
-### 5. SSE chunked 与心跳
+### 6. SSE chunked 与心跳
 
 - `format_sse_message` 负责事件格式；
 - `chunk()` 负责 HTTP chunk 帧；
@@ -338,7 +347,7 @@ EpollLoop
 - `/v1/chat` 使用 chunked + close，`done` 后结束；
 - 待发送事件队列有上限，慢客户端不会无限堆积。
 
-### 6. DeepSeek 取消
+### 7. DeepSeek 取消
 
 - `ConnectionContext` 持有 `shared_ptr<atomic<bool>> canceled`；
 - `ClientConnection` 关闭时 `store(true)`；
@@ -346,7 +355,7 @@ EpollLoop
 - `HttpClient` 使用 `curl_multi`，每 100ms 检查 token；
 - 客户端断开后约 100ms 内中止传输，worker 可以继续接任务。
 
-### 7. 会话记忆
+### 8. 会话记忆
 
 - `SessionManager` 保存每个 `session_id` 的消息；
 - 按 user turn 边界裁剪，避免切断 assistant `tool_calls` 和 tool 响应；
@@ -396,7 +405,8 @@ ctest --test-dir build --output-on-failure
 
 - 5 个 GoogleTest 单元测试程序；
 - 1 个 Python 端到端集成测试；
-- 覆盖 Session、Timer、SSE、Tools、ThreadPool，以及静态文件、Keep-Alive、chat、tool_calls、心跳、取消、431/413。
+- 覆盖 Session、Timer、SSE、Tools、ThreadPool，以及静态文件、Keep-Alive、chat、tool_calls、心跳、取消、431/413；
+- 覆盖 HTTP 请求行/header/body 与自定义行协议跨 TCP 段到达。
 
 ### ASan / UBSan
 
