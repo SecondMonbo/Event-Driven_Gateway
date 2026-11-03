@@ -1,5 +1,5 @@
 # 编译输出
-build/
+build*/
 *.o
 *.exe
 gateway
@@ -12,3 +12,7 @@ llama.cpp/
 *.swp
 *.tmp
 *.log
+
+# Python test cache
+__pycache__/
+*.pyc

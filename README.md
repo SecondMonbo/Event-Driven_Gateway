@@ -1,197 +1,468 @@
+# C++ 事件驱动 LLM 网关
 
-```markdown
-# 🚀 Event-Driven High-Performance Gateway
+[![CI](https://github.com/SecondMonbo/Event-Driven_Gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/SecondMonbo/Event-Driven_Gateway/actions/workflows/ci.yml)
 
-一个基于 **epoll 边缘触发** 和 **非阻塞 I/O** 的事件驱动型 HTTP/SSE 网关，支持自定义协议、静态文件服务、线程池异步任务、定时器管理，以及 **Server-Sent Events (SSE)** 长连接推送。可作为 API 网关、智能体代理或轻量级 Web 服务器的底层骨架。
+基于 **epoll 边缘触发 + 非阻塞 I/O** 的 C++17 网关，面向 **LLM 流式对话** 和 **最小 Agent 工具调用**。包含 HTTP/1.1、SSE、静态文件服务、自定义行协议、线程池、定时器、资源限制和客户端断开取消。
 
-## 📌 项目定位
-
-- **高性能**：单线程事件循环 + 非阻塞 socket，可支撑数万并发连接。
-- **可扩展**：基于 `ProtocolHandler` 抽象基类，支持 HTTP、SSE、自定义协议动态切换。
-- **生产级特性**：写缓冲区、Keep-Alive、线程池、定时器、Valgrind 内存检测、wrk 压测。
-- **AI 就绪**：已集成 SSE 推送与线程池，可快速对接大模型流式 API。
+> 定位：个人学习/求职项目，非生产级 Agent 平台。项目重点：事件驱动网络层、连接生命周期、异步任务和 SSE 流式链路。
 
 ---
 
-## ✨ 主要特性
+## 项目定位
 
-| 模块             | 功能                                                                                                   |
-| ---------------- | ------------------------------------------------------------------------------------------------------ |
-| **事件驱动引擎** | epoll 边缘触发 + 非阻塞 socket，正确处理 `EAGAIN`                                                      |
-| **HTTP/1.1**     | 状态机解析请求行/头部/ `Content-Length` Body；支持 GET/POST、Keep-Alive、静态文件服务（MIME 类型映射） |
-| **SSE**          | 握手响应、事件队列、周期性心跳（定时器）、连接关闭自动取消任务                                         |
-| **自定义协议**   | 行协议 `TYPE                                                                                           |
-| **线程池**       | 任务队列 + 完成队列，工作线程执行阻塞/耗时操作，回调在主线程安全执行                                   |
-| **定时器**       | 基于 `std::priority_queue` + 懒删除，支持一次性/周期性任务，与 epoll 事件循环集成                      |
-| **写缓冲区**     | 非阻塞发送 + `EPOLLOUT` 驱动，支持大文件分块传输                                                       |
-| **内存安全**     | Valgrind 检测：`definitely lost: 0`，无内存泄漏                                                        |
-| **压测**         | `wrk` 测试：QPS ≈ 2.8 万，平均延迟 3.5ms                                                               |
+- **网络层**：单 reactor epoll ET、非阻塞 socket、写缓冲 + `EPOLLOUT`、eventfd 唤醒。
+- **协议层**：HTTP/1.1、SSE、自定义行协议，通过 `ProtocolHandler` 抽象切换。
+- **业务层**：DeepSeek OpenAI 兼容接口、多轮工具调用、会话记忆。
+- **工程化**：GoogleTest + CTest、Python 集成测试、ASan/UBSan、GitHub Actions。
+
+不包含：多 reactor、WebSocket、RAG、多 provider 路由、鉴权/限流、持久化存储。
 
 ---
 
-## 🧱 项目结构
+## 功能特性
 
-```bash
-Event-Driven_System_for_Agent_Gateways/
+| 模块     | 能力                                                                            |
+| -------- | ------------------------------------------------------------------------------- |
+| 事件循环 | epoll ET + 非阻塞 I/O，读/写处理 `EAGAIN`，正确处理半关闭和 RST                 |
+| HTTP/1.1 | 请求行/头部/`Content-Length` Body 解析，GET/POST，Keep-Alive，静态文件，MIME    |
+| SSE      | chunked 传输、3 秒心跳、`content`/`reasoning`/`tool_result`/`error`/`done` 事件 |
+| LLM      | DeepSeek 流式接口，`reasoning_content`、增量 `tool_calls`、最多 10 轮工具循环   |
+| 工具     | 注册表 + 执行器，内置 `get_current_time`，错误/异常正确标记失败                 |
+| 异步     | 4 worker 线程池 + 完成队列，回调回主线程，避免跨线程写 socket                   |
+| 定时器   | 最小堆 + `epoll_wait` timeout，锁外回调，支持周期任务、取消、回调内增删         |
+| 生命周期 | `shared_ptr` 连接、`weak_ptr` 反向引用、`unique_ptr` 协议/上下文所有权          |
+| 取消     | 客户端断开后通过共享 `atomic<bool>` + `curl_multi` 轮询中止 LLM 请求            |
+| 资源保护 | header/body/读写缓冲/连接数上限，空闲连接和会话过期清理                         |
+| 测试     | 5 个 GoogleTest 单元测试 + 1 个 Python 端到端集成测试                           |
+
+---
+
+## 技术栈
+
+- C++17
+- Linux / WSL2
+- epoll、eventfd、非阻塞 socket
+- libcurl（`curl_multi`）
+- nlohmann/json
+- CMake + CTest
+- GoogleTest（测试时通过 FetchContent 获取）
+- Python 3（集成测试，仅标准库）
+
+---
+
+## 项目结构
+
+```text
+.
 ├── CMakeLists.txt
+├── LICENSE
 ├── README.md
 ├── include/
-│ ├── ConnectionContext.hpp
-│ ├── ClientConnection.hpp
-│ ├── EpollLoop.hpp
-│ ├── ThreadPool.hpp
-│ ├── TimerManager.hpp
-│ └── protocol/
-│ ├── ProtocolHandler.hpp
-│ ├── HttpChannel.hpp
-│ ├── SseHandler.hpp
-│ └── CustomLineHandler.hpp
+│   ├── core/
+│   │   ├── ClientConnection.hpp
+│   │   ├── ConnectionContext.hpp
+│   │   ├── EpollLoop.hpp
+│   │   ├── Limits.hpp
+│   │   ├── ThreadPool.hpp
+│   │   └── TimerManager.hpp
+│   ├── llm/
+│   │   ├── AgentLoop.hpp
+│   │   ├── HttpClient.hpp
+│   │   ├── LLMService.hpp
+│   │   └── SessionManager.hpp
+│   ├── protocol/
+│   │   ├── CustomLineHandler.hpp
+│   │   ├── HttpChannel.hpp
+│   │   ├── ProtocolHandler.hpp
+│   │   └── SseHandler.hpp
+│   ├── tools/
+│   │   ├── ToolDefinition.hpp
+│   │   ├── ToolExecutor.hpp
+│   │   ├── ToolRegistry.hpp
+│   │   └── builtin/TimeTool.hpp
+│   └── third_party/json.hpp
 ├── src/
-│ ├── main.cpp
-│ ├── ClientConnection.cpp
-│ ├── EpollLoop.cpp
-│ ├── ThreadPool.cpp
-│ ├── TimerManager.cpp
-│ └── protocol/
-│ ├── HttpChannel.cpp
-│ ├── SseHandler.cpp
-│ └── CustomLineHandler.cpp
-└── www/ # 静态文件根目录（需手动创建）
-└── index.html
-````
+│   ├── main.cpp
+│   ├── core/...
+│   ├── llm/...
+│   ├── protocol/...
+│   └── tools/...
+├── tests/
+│   ├── CMakeLists.txt
+│   ├── unit/
+│   └── integration/test_gateway.py
+├── docs/class-diagram.md
+├── www/index.html
+└── .github/workflows/ci.yml
+```
+
+完整类图见 [docs/class-diagram.md](docs/class-diagram.md)。
+
 ---
 
-## 🚀 快速开始
+## 快速开始
 
 ### 环境要求
 
-- Linux / WSL 2（Ubuntu 22.04 或更高）
-- GCC 9+ / Clang 10+
-- CMake 3.10+
+- Linux / WSL2（Ubuntu 22.04+）
+- GCC 11+ / Clang 14+
+- CMake 3.16+
+- `libcurl` 开发包、`pkg-config`
+- Python 3（仅测试需要）
+
+Ubuntu 安装：
+
+```bash
+sudo apt update
+sudo apt install -y build-essential cmake pkg-config libcurl4-openssl-dev
+```
+
+> 测试使用 CMake `FetchContent` 下载 GoogleTest，第一次配置需要网络；没有网络时可改用系统 `libgtest-dev` 或把 gtest 源码放进 `third_party/`。
 
 ### 编译
 
 ```bash
-git clone https://github.com/YourName/Event-Driven_Gateway.git
+git clone https://github.com/SecondMonbo/Event-Driven_Gateway.git
 cd Event-Driven_Gateway
-mkdir build && cd build
-cmake ..
-make
-````
+
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+```
 
 ### 运行
 
 ```bash
-./gateway
+export DEEPSEEK_API_KEY=sk-xxxxxxxx
+./build/gateway
 ```
 
-默认监听端口：`12010`（可在 `main.cpp` 中修改）
-
-### 测试
-
-#### 1. HTTP 静态文件
-
-在 `www/` 目录下放置 `index.html`，然后访问：
+默认监听 `12010`，可通过 `GATEWAY_PORT` 修改：
 
 ```bash
-curl -v http://localhost:12010/
+GATEWAY_PORT=18080 ./build/gateway
 ```
 
-#### 2. HTTP Keep-Alive
+> 未设置 `DEEPSEEK_API_KEY` 时服务仍可启动，静态文件、`/events` 和错误响应可用；`/v1/chat` 会返回 SSE `error` + `done`。
+
+---
+
+## 配置
+
+| 环境变量            | 默认值                                         | 说明                                         |
+| ------------------- | ---------------------------------------------- | -------------------------------------------- |
+| `GATEWAY_PORT`      | `12010`                                        | 监听端口；非法值启动失败                     |
+| `DEEPSEEK_API_KEY`  | 无                                             | DeepSeek API Key；`/v1/chat` 必需            |
+| `DEEPSEEK_BASE_URL` | `https://api.deepseek.com/v1/chat/completions` | 上游完整 URL，可指向 mock/兼容服务           |
+| `DEEPSEEK_MODEL`    | `deepseek-chat`                                | 仅 DeepSeek 后端使用；本地后端占位为 `Phi-3` |
+
+示例：
 
 ```bash
-curl -v -H "Connection: keep-alive" http://localhost:12010/
+export DEEPSEEK_API_KEY=sk-xxxxxxxx
+export DEEPSEEK_BASE_URL=https://api.deepseek.com/v1/chat/completions
+export DEEPSEEK_MODEL=deepseek-chat
+export GATEWAY_PORT=12010
+./build/gateway
 ```
 
-#### 3. SSE 心跳
+---
+
+## API
+
+### 静态文件
 
 ```bash
-curl -N -H "Accept: text/event-stream" http://localhost:12010/events
+curl -i http://127.0.0.1:12010/
+curl -i http://127.0.0.1:12010/index.html
+curl -i 'http://127.0.0.1:12010/index.html?x=1'
 ```
 
-每 3 秒收到一条当前时间。
+- 静态根目录为可执行文件同级的 `../www`；
+- 路径穿越返回 `403`；
+- 文件不存在返回 `404`；
+- 非 GET/POST 方法返回 `405` + `Allow`；
+- 静态文件使用 `Content-Length`，不使用 chunked。
 
-#### 4. 自定义行协议
+### SSE 心跳
 
 ```bash
-echo "PING|hello" | nc localhost 12010
+curl -N -H 'Accept: text/event-stream' \
+  http://127.0.0.1:12010/events
 ```
 
-#### 5. 压力测试
+响应每 3 秒推送：
+
+```text
+event: heartbeat
+data: Current time: ...
+```
+
+- 使用 `Transfer-Encoding: chunked` + `Connection: keep-alive`；
+- 客户端断开后连接和定时器会被清理；
+- 浏览器可以用 `EventSource('/events')`。
+
+### 对话接口 `POST /v1/chat`
 
 ```bash
-wrk -t4 -c100 -d30s http://localhost:12010/
+curl -N -X POST http://127.0.0.1:12010/v1/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"session_id":"demo","message":"现在几点？"}'
+```
+
+响应：
+
+```text
+event: content
+data: 现在
+
+event: tool_result
+data: 2026-11-03 22:30:00
+
+event: content
+data: 现在是 2026-11-03 22:30:00
+
+event: done
+data: [DONE]
+```
+
+事件说明：
+
+| event         | 说明                          |
+| ------------- | ----------------------------- |
+| `content`     | 模型正文增量                  |
+| `reasoning`   | 思考过程增量                  |
+| `tool_result` | 工具执行结果                  |
+| `error`       | LLM 调用失败、缺少 API Key 等 |
+| `done`        | 本轮结束，data 为 `[DONE]`    |
+
+- chat 使用 `Transfer-Encoding: chunked` + `Connection: close`；
+- 成功和失败都会以 `done` 结束；
+- 客户端断开时，AgentLoop 通过取消令牌和 `curl_multi` 尽快中止上游请求；
+- **浏览器不要用 `EventSource` 调 `/v1/chat`**：`EventSource` 只支持 GET，chat 是 POST。浏览器请用 `fetch` + `ReadableStream` 解析 SSE。
+
+### 自定义行协议
+
+```bash
+printf 'PING|hello\n' | nc 127.0.0.1 12010
+# PONG|hello
+
+printf 'TOOL|time\n' | nc 127.0.0.1 12010
+# TOOL_RES|...
+```
+
+支持：
+
+- `PING|<payload>` → `PONG|<payload>`
+- `CHAT|<payload>` → `CHAT_ACK|<payload>`
+- `TOOL|time` → `TOOL_RES|<当前时间>`
+
+---
+
+## 架构
+
+```mermaid
+flowchart LR
+    C[Client] --> EL[EpollLoop]
+    EL --> CC[ClientConnection]
+    CC --> PH[ProtocolHandler]
+    PH --> HC[HttpChannel]
+    PH --> SH[SseHandler]
+    PH --> CL[CustomLineHandler]
+
+    EL --> TP[ThreadPool]
+    EL --> TM[TimerManager]
+    TP --> AL[AgentLoop]
+    AL --> LS[LLMService]
+    LS --> H[HttpClient / curl_multi]
+    AL --> TE[ToolExecutor]
+    TE --> TR[ToolRegistry]
+    AL --> SM[SessionManager]
+```
+
+详细类图：[docs/class-diagram.md](docs/class-diagram.md)。
+
+一次 `/v1/chat` 的路径：
+
+```text
+EpollLoop
+  -> ClientConnection::on_readable
+  -> HttpChannel::process
+  -> UPGRADE_SSE
+  -> SseHandler
+  -> ThreadPool -> AgentLoop::run
+  -> LLMService::call
+  -> HttpClient / curl_multi
+  -> 工具执行 / 多轮循环
+  -> ThreadPool completion
+  -> ClientConnection::send_data
 ```
 
 ---
 
-## 🧩 架构设计
+## 关键设计
 
+### 1. epoll ET + 写缓冲
+
+- 读事件一次读到 `EAGAIN`；
+- 写不完整时进入 `write_buffer_` 并注册 `EPOLLOUT`；
+- `EPOLLOUT` 到达后继续发送，清空后取消写事件；
+- 发送使用 `MSG_NOSIGNAL`，避免客户端 RST 触发 SIGPIPE。
+
+### 2. 连接生命周期
+
+- `EpollLoop` 用 `unordered_map<int, shared_ptr<ClientConnection>>` 持有连接；
+- `ConnectionContext` 用 `weak_ptr<ClientConnection>` 反向引用，避免循环；
+- `ClientConnection` 用 `unique_ptr` 持有 `ConnectionContext` 和当前 `ProtocolHandler`；
+- 协议升级 SSE 时替换 handler，旧 handler 先析构，ctx 后析构。
+
+### 3. 线程池与完成队列
+
+- 阻塞的 LLM/工具调用交给 worker；
+- 完成回调通过 `ThreadPool::post_completion` 回主线程；
+- 回调捕获 `weak_ptr<ClientConnection>`，客户端断开后自动丢弃；
+- 事件循环用 eventfd 唤醒，不轮询。
+
+### 4. 定时器
+
+- `TimerManager` 使用最小堆 + `epoll_wait` 超时；
+- 回调在锁外执行，避免回调内 `add_timer/cancel_timer` 死锁；
+- 周期任务回调后重新入堆；
+- 空闲连接检查每 1 秒一次，超过 60 秒关闭；
+- Session 清理每 60 秒一次。
+
+### 5. SSE chunked 与心跳
+
+- `format_sse_message` 负责事件格式；
+- `chunk()` 负责 HTTP chunk 帧；
+- `/events` 使用 chunked + keep-alive，3 秒心跳；
+- `/v1/chat` 使用 chunked + close，`done` 后结束；
+- 待发送事件队列有上限，慢客户端不会无限堆积。
+
+### 6. DeepSeek 取消
+
+- `ConnectionContext` 持有 `shared_ptr<atomic<bool>> canceled`；
+- `ClientConnection` 关闭时 `store(true)`；
+- `LLMService` 把指针传到 `HttpClient`；
+- `HttpClient` 使用 `curl_multi`，每 100ms 检查 token；
+- 客户端断开后约 100ms 内中止传输，worker 可以继续接任务。
+
+### 7. 会话记忆
+
+- `SessionManager` 保存每个 `session_id` 的消息；
+- 按 user turn 边界裁剪，避免切断 assistant `tool_calls` 和 tool 响应；
+- 保留开头 system 消息；
+- 最多 100 条消息，60 秒扫描、1 小时无活动清理；
+- 不做摘要压缩。
+
+---
+
+## 资源限制
+
+在 `include/core/Limits.hpp` 中集中定义：
+
+| 限制             | 值    |
+| ---------------- | ----- |
+| header 总字节    | 8 KB  |
+| header 数量      | 100   |
+| body             | 1 MB  |
+| read buffer      | 2 MB  |
+| write buffer     | 4 MB  |
+| 最大连接数       | 512   |
+| 空闲连接超时     | 60 秒 |
+| 空闲检查间隔     | 1 秒  |
+| session 清理间隔 | 60 秒 |
+
+超限行为：
+
+- header 过大 → `431`
+- body 过大 → `413`
+- 读/写缓冲过大 → 关闭连接
+- 连接数超限 → `503`
+- 空闲连接 → 主动关闭
+
+---
+
+## 测试
+
+### 构建并运行 CTest
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+ctest --test-dir build --output-on-failure
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        EpollLoop                           │
-│  ┌───────────────────────────────────────────────────────┐ │
-│  │  connections_ (fd → shared_ptr<ClientConnection>)   │ │
-│  └───────────────────────────────────────────────────────┘ │
-│                           │                               │
-│                           ▼                               │
-│  ┌───────────────────────────────────────────────────────┐ │
-│  │               ClientConnection                        │ │
-│  │  - read_buffer_ / write_buffer_                      │ │
-│  │  - handler_ (unique_ptr<ProtocolHandler>)            │ │
-│  │  - send_data() / handle_write() / wakeup()           │ │
-│  └───────────────────────────────────────────────────────┘ │
-│                           │                               │
-│                           ▼                               │
-│  ┌───────────────────────────────────────────────────────┐ │
-│  │              ProtocolHandler (抽象基类)              │ │
-│  ├───────────┬───────────────┬───────────────────────────┤ │
-│  │ HttpChannel│ CustomLineHandler│    SseHandler          │ │
-│  │ (HTTP/1.1)│ (自定义协议)   │   (SSE + 心跳定时器)   │ │
-│  └───────────┴───────────────┴───────────────────────────┘ │
-└─────────────────────────────────────────────────────────────┘
+
+当前测试：
+
+- 5 个 GoogleTest 单元测试程序；
+- 1 个 Python 端到端集成测试；
+- 覆盖 Session、Timer、SSE、Tools、ThreadPool，以及静态文件、Keep-Alive、chat、tool_calls、心跳、取消、431/413。
+
+### ASan / UBSan
+
+```bash
+cmake -S . -B build-asan \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g" \
+  -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+
+cmake --build build-asan -j
+
+ASAN_OPTIONS=detect_leaks=1:abort_on_error=1 \
+  UBSAN_OPTIONS=halt_on_error=1 \
+  ctest --test-dir build-asan --output-on-failure
 ```
 
-### 主要组件说明
+### TSan
 
-- **`EpollLoop`**：事件循环核心，管理 epoll 实例、监听 socket、连接映射表，驱动 `epoll_wait` 和定时器。
-- **`ClientConnection`**：代表一个客户端连接，持有读写缓冲区、协议处理器、写事件标志，提供 `send_data`、`wakeup`、`flush` 等接口。
-- **`ProtocolHandler`**：协议处理抽象基类，所有协议（HTTP、SSE、自定义）均继承自它，实现 `process()` 和 `reset()`。
-- **`ConnectionContext`**：上下文聚合结构，传递 `ClientConnection*`、`ThreadPool&`、`TimerManager&`、`EpollLoop&`，避免层层转发。
-- **`ThreadPool`**：异步任务线程池，支持有/无返回值的任务，回调在主线程执行。
-- **`TimerManager`**：定时器管理器，基于最小堆 + 懒删除，与 `epoll_wait` 超时集成。
+```bash
+cmake -S . -B build-tsan \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DCMAKE_CXX_FLAGS="-fsanitize=thread -fno-omit-frame-pointer -g" \
+  -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread"
 
----
+cmake --build build-tsan -j
 
-## 📊 性能数据
+# 某些内核需要关闭 ASLR 才能运行 TSan
+setarch $(uname -m) -R ./build-tsan/tests/test_session_manager
+```
 
-- **压测工具**：`wrk -t4 -c100 -d30s http://localhost:12010/`
-- **QPS**：约 28,000 req/s
-- **平均延迟**：3.5 ms
-- **最大延迟**：< 15 ms
-- **内存检测**：Valgrind `definitely lost: 0`
+### CI
 
----
+GitHub Actions 包含：
 
-## 🛠️ 后续扩展方向
-
-- [ ] 接入 WebSocket 协议（基于 HTTP Upgrade）
-- [ ] 实现反向代理 / 负载均衡（连接后端多个服务）
-- [ ] 集成 LLM API（OpenAI / Ollama），实现流式转发
-- [ ] 引入 `spdlog` 日志库，支持日志级别和文件输出
-- [ ] 完善错误处理与单元测试
-- [ ] 支持 HTTP/2（可选）
+- Release 构建 + ctest；
+- ASan/UBSan 构建 + ctest。
 
 ---
 
-## 🤝 贡献
+## 已知限制
 
-目前为个人学习项目，欢迎 Fork 和 Star。
+- **单 reactor**：一个 epoll 事件循环 + 4 个 worker，不是多 reactor/多进程架构。
+- **只实现 DeepSeek 后端**：`LOCAL_LLAMA` 和 `call_llama` 仍是占位，本地 `Phi-3` 不支持工具调用。
+- **不做上下文摘要**：只按 user turn 截断，长对话会丢失早期上下文。
+- **取消是协作式的**：`curl_multi` 100ms 轮询，上游可能短暂继续；工具函数执行中不可抢占。
+- **静态文件在事件循环线程读取**：大文件可能阻塞其他连接，未使用 `sendfile`。
+- **slowloris 只做了基础防护**：有 header/body/read buffer 上限和 idle timeout，但没有独立的“请求头截止时间”。
+- **没有 WebSocket、RAG、多 provider、鉴权、限流、metrics、Docker、优雅停机**。
+- **会话存储在进程内**：重启丢失，不是 Redis/分布式存储。
+- **没有附带可复现 benchmark**：不提供未经复测的 QPS 数字。
 
 ---
 
-## 📜 许可证
+## 后续方向
 
-MIT License
+- [ ] 多 reactor + 连接分片
+- [ ] WebSocket
+- [ ] 多 provider 路由与故障转移
+- [ ] 上下文摘要压缩
+- [ ] 鉴权、限流、请求 ID、metrics
+- [ ] 静态文件 `sendfile` / 异步文件 I/O
+- [ ] Docker / 优雅停机
+- [ ] 可复现的 wrk benchmark
 
 ---
+
+## License
+
+MIT License，见 [LICENSE](LICENSE)。
