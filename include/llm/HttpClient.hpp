@@ -69,7 +69,6 @@ private:
         std::function<void(bool)> on_complete;
         bool success = true;
         std::string error_msg;
-        const std::atomic<bool> *canceled = nullptr;
     };
 
     // 静态回调函数（由libcurl调用）
@@ -77,7 +76,4 @@ private:
 
     // 辅助：设置通用选项
     void set_commom_options(const std::string &url);
-
-    static int progress_callback(void *clientp, curl_off_t dltotal, curl_off_t dlnow,
-                                 curl_off_t ultotal, curl_off_t ulnow);
 };

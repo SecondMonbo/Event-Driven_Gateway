@@ -28,11 +28,11 @@ LLMCallResult LLMService::call(const std::string &session_id, const std::string 
     // 目前仅支持本地 llama 和远端 deepseel_api,后期扩展可以抽象改为注入
     if (backend_ == ModelBackend::DEEPSEEK_API)
     {
-        return call_deepseek(session_id, message, enable_tools, emit);
+        return call_deepseek(session_id, message, enable_tools, emit, canceled);
     }
     else
     {
-        return call_llama(session_id, message, enable_tools, emit);
+        return call_llama(session_id, message, enable_tools, emit, canceled);
     }
 }
 

@@ -13,56 +13,62 @@ bool HttpClient::post(
     const std::unordered_map<std::string, std::string> &extra_headers,
     const std::atomic<bool> *canceled)
 {
-    CURL *curl = curl_easy_init(); // 每次新建句柄
-    if (!curl)
+    CURL *easy = curl_easy_init(); // 每次新建句柄
+    CURLM *multi = curl_multi_init();
+
+    if (!easy)
     {
+        curl_multi_cleanup(multi);
+        if (on_complete)
+            on_complete(false);
+        return false;
+    }
+    if (!multi)
+    {
+        curl_easy_cleanup(easy);
         if (on_complete)
             on_complete(false);
         return false;
     }
 
-    // 重置句柄，清楚之前请求的配置
-    curl_easy_reset(curl);
+    // 重置句柄，清除之前请求的配置
+    curl_easy_reset(easy);
 
     // 创建上下文（因为是同步阻塞，在请求期间有效）
     CallbackContext ctx;
     ctx.on_data = std::move(on_data);
     ctx.on_complete = std::move(on_complete);
     ctx.success = true;
-    ctx.canceled = canceled;
-
-    if (canceled)
-    {
-        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
-        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, progress_callback);
-        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &ctx);
-    }
 
     // 设置 URL
-    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(easy, CURLOPT_URL, url.c_str());
 
     // 设置为 POST 请求
-    curl_easy_setopt(curl, CURLOPT_POST, 1L);
+    curl_easy_setopt(easy, CURLOPT_POST, 1L);
 
     // 设置请求体
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, static_cast<long>(body.size()));
-
-    // 设置超时（秒）
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_sec);
+    curl_easy_setopt(easy, CURLOPT_POSTFIELDS, body.c_str());
+    curl_easy_setopt(easy, CURLOPT_POSTFIELDSIZE, static_cast<long>(body.size()));
 
     // 设置写回调函数（接收响应数据）
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+    curl_easy_setopt(easy, CURLOPT_WRITEFUNCTION, write_callback);
 
     // 通过上下文指针传递用户数据
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &ctx);
+    curl_easy_setopt(easy, CURLOPT_WRITEDATA, &ctx);
+
+    // 多线程环境下规避 SIGPIPE 信号
+    curl_easy_setopt(easy, CURLOPT_NOSIGNAL, 1L);
+
+    // 设置超时时间
+    curl_easy_setopt(easy, CURLOPT_CONNECTTIMEOUT_MS, 5000L);
+    curl_easy_setopt(easy, CURLOPT_TIMEOUT_MS, timeout_sec * 1000L);
 
     // 设置请求头
     struct curl_slist *headers = nullptr;
     headers = curl_slist_append(headers, "Content-Type: application/json");
     if (headers)
     {
-        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+        curl_easy_setopt(easy, CURLOPT_HTTPHEADER, headers);
     }
 
     // 添加额外头部行
@@ -71,50 +77,83 @@ bool HttpClient::post(
         std::string header = key + ": " + value;
         headers = curl_slist_append(headers, header.c_str());
     }
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(easy, CURLOPT_HTTPHEADER, headers);
 
-    // std::cout << "=== HttpClient::post ===" << std::endl;
-    // std::cout << "URL: " << url << std::endl;
-    // for (const auto &[key, value] : extra_headers)
-    // {
-    //     std::cout << "Header: " << key << ": " << value << std::endl;
-    // }
+    // 执行请求,手动
+    CURLMcode add = curl_multi_add_handle(multi, easy);
+    if (add != CURLM_OK)
+    {
+        if (headers)
+            curl_slist_free_all(headers);
 
-    // 执行请求（阻塞直到完成）
-    CURLcode res = curl_easy_perform(curl);
+        curl_easy_cleanup(easy);
+        curl_multi_cleanup(multi);
+        if (on_complete)
+            on_complete(false);
+        return false;
+    }
+
+    int running = 0;
+    CURLMcode mc = curl_multi_perform(multi, &running);
+    bool aborted = false;
+
+    while (mc == CURLM_OK && running > 0)
+    {
+        // 每轮检查 token
+        if (canceled && canceled->load())
+        {
+            aborted = true;
+            break;
+        }
+
+        int numfds = 0;
+        mc = curl_multi_poll(multi, nullptr, 0, 100, &numfds);
+        if (mc != CURLM_OK)
+            break;
+
+        mc = curl_multi_perform(multi, &running);
+    }
+
+    // 获取结果
+    CURLcode result = CURLE_OK;
+    if (!aborted)
+    {
+        int queued = 0;
+        CURLMsg *msg = nullptr;
+
+        while ((msg = curl_multi_info_read(multi, &queued)) != nullptr)
+        {
+            if (msg->msg == CURLMSG_DONE)
+            {
+                result = msg->data.result;
+                break;
+            }
+        }
+    }
+    else
+    {
+        result = CURLE_ABORTED_BY_CALLBACK;
+    }
 
     // 获取 HTTP 状态码
     long http_code = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+    curl_easy_getinfo(easy, CURLINFO_RESPONSE_CODE, &http_code);
 
-    curl_easy_cleanup(curl); // 用完销毁
-
-    // 检测错误, 分开判断，将来调试有需要方便记录错误信息
-    if (res != CURLE_OK)
-    {
-
-        std::cerr << "CURL error: " << curl_easy_strerror(res) << std::endl;
-        ctx.success = false;
-        ctx.error_msg = curl_easy_strerror(res);
-    }
-    if (http_code >= 400)
-    {
-        std::cerr << "HTTP error: " << http_code << std::endl;
-        ctx.error_msg = "HTTP " + std::to_string(http_code);
-        ctx.success = false;
-    }
+    curl_multi_remove_handle(multi, easy);
+    curl_easy_cleanup(easy); // 用完销毁
+    curl_multi_cleanup(multi);
 
     // 清理头部列表
     if (headers)
         curl_slist_free_all(headers);
 
-    // 调用完成回调（如果存在）
-    if (ctx.on_complete)
-    {
-        ctx.on_complete(ctx.success);
-    }
+    bool ok = !aborted && mc == CURLM_OK && result == CURLE_OK && http_code < 400;
 
-    return (res == CURLE_OK && http_code < 400);
+    ctx.success = ok;
+    if (ctx.on_complete)
+        ctx.on_complete(ok);
+
+    return ok;
 }
 
 size_t HttpClient::write_callback(char *ptr, size_t size, size_t nmemb, void *userdata)
@@ -126,19 +165,4 @@ size_t HttpClient::write_callback(char *ptr, size_t size, size_t nmemb, void *us
         ctx->on_data(ptr, total_size);
     }
     return total_size;
-}
-
-int HttpClient::progress_callback(void *clientp, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow)
-{
-    (void)dltotal;
-    (void)dlnow;
-    (void)ultotal;
-    (void)ulnow;
-
-    auto *ctx = static_cast<CallbackContext *>(clientp);
-    if (ctx && ctx->canceled && ctx->canceled->load())
-    {
-        return 1; // 非0 -> curl中止
-    }
-    return 0;
 }
