@@ -1,11 +1,16 @@
 include(FetchContent)
 
+# CMake 3.24+ warns about downloaded archive timestamps unless CMP0135 is set.
+# The policy guard keeps the test build compatible with older CMake versions.
+if(POLICY CMP0135)
+    cmake_policy(SET CMP0135 NEW)
+endif()
+
 set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
 set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(
     googletest
     URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.tar.gz
-    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 FetchContent_MakeAvailable(googletest)
 
