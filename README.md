@@ -1,6 +1,6 @@
 # C++ 事件驱动 LLM 网关
 
-[![CI](https://github.com/SecondMonbo/Event-Driven_Gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/SecondMonbo/Event-Driven_Gateway/actions/workflows/ci.yml)
+[![CI](https://github.com/SecondMonbo/cpp-llm-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/SecondMonbo/cpp-llm-gateway/actions/workflows/ci.yml)
 
 基于 **epoll 边缘触发 + 非阻塞 I/O** 的 C++17 网关，面向 **LLM 流式对话** 和 **最小 Agent 工具调用**。包含 HTTP/1.1、SSE、静态文件服务、自定义行协议、线程池、定时器、资源限制和客户端断开取消。
 
@@ -122,8 +122,8 @@ sudo apt install -y build-essential cmake pkg-config libcurl4-openssl-dev
 ### 编译
 
 ```bash
-git clone https://github.com/SecondMonbo/Event-Driven_Gateway.git
-cd Event-Driven_Gateway
+git clone https://github.com/SecondMonbo/cpp-llm-gateway.git
+cd cpp-llm-gateway
 
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
