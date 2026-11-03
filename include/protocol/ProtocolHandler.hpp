@@ -6,7 +6,8 @@
 // 处理结果枚举类，定义程序返回值，用以HTTP协议升级SSE协议和WebSocket协议
 enum class ProcessResult
 {
-    CONTINUE,         // 正常处理完成，需要保持连接
+    CONTINUE,         // 一个完整请求完成，需要保持连接
+    NEED_MORE,        // 当前帧不完整，等待下一次读
     CLOSE,            // 需要关闭连接
     UPGRADE_SSE,      // 切换到 SSE 协议
     UPGRADE_WEBSOCKET // 切换到 WebSocket 协议

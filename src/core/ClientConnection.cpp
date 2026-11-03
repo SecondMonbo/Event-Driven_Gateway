@@ -155,6 +155,10 @@ bool ClientConnection::on_readable()
                 continue;
             }
         }
+        else if (result == ProcessResult::NEED_MORE)
+        {
+            break;
+        }
         else if (result == ProcessResult::UPGRADE_SSE)
         {
             // std::cout << "this is clientconnection,sse upgrading...\n";

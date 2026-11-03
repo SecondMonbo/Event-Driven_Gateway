@@ -250,6 +250,65 @@ def test_keep_alive(gateway):
     assert response.count(b"HTTP/1.1 200 OK") >= 2, response[:500]
 
 
+def split_request(port, chunks, read_timeout=3):
+    with socket.create_connection(("127.0.0.1", port), timeout=read_timeout) as sock:
+        sock.settimeout(read_timeout)
+        for chunk in chunks:
+            sock.sendall(chunk)
+            time.sleep(0.15)
+        data = b""
+        while True:
+            try:
+                chunk = sock.recv(4096)
+            except socket.timeout:
+                break
+            if not chunk:
+                break
+            data += chunk
+        return data
+
+
+def test_split_packets(gateway):
+    # Request line complete, one header line split across writes.
+    response = split_request(
+        gateway.port,
+        [
+            b"GET / HTTP/1.1\r\nHost: exa",
+            b"mple\r\nConnection: close\r\n\r\n",
+        ],
+    )
+    assert response.startswith(b"HTTP/1.1 200"), response[:200]
+
+    # Request line itself split.
+    response = split_request(
+        gateway.port,
+        [
+            b"GET / HT",
+            b"TP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
+        ],
+    )
+    assert response.startswith(b"HTTP/1.1 200"), response[:200]
+
+    # Body split after headers.
+    response = split_request(
+        gateway.port,
+        [
+            b"POST / HTTP/1.1\r\nHost: x\r\nContent-Length: 5\r\n"
+            b"Connection: close\r\n\r\nhe",
+            b"llo",
+        ],
+    )
+    assert b"Receive body: hello" in response, response[:300]
+
+    # Custom line protocol: a partial line must wait for the newline.
+    response = split_request(
+        gateway.port,
+        [b"PING|hel", b"lo\n"],
+        read_timeout=0.5,
+    )
+    assert b"PONG|hello" in response, response[:200]
+
+
 def test_chat_success(gateway):
     body = json.dumps({"session_id": "s1", "message": "hi"})
     status, headers, response = http_request(
@@ -402,6 +461,7 @@ def main():
     try:
         test_static(gateway)
         test_keep_alive(gateway)
+        test_split_packets(gateway)
         test_chat_success(gateway)
         test_tool_call(gateway)
         test_heartbeat(gateway)

@@ -382,7 +382,7 @@ ProcessResult HttpChannel::process(std::string &read_buffer)
         {
             std::string line;
             if (!extract_line(read_buffer, line))
-                return ProcessResult::CONTINUE;
+                return ProcessResult::NEED_MORE;
 
             // 请求行计数
             if (line.size() + 2 > limits::MAX_HEADER_BYTES)
@@ -405,7 +405,7 @@ ProcessResult HttpChannel::process(std::string &read_buffer)
         {
             std::string line;
             if (!extract_line(read_buffer, line))
-                return ProcessResult::CONTINUE;
+                return ProcessResult::NEED_MORE;
             if (line.empty())
             {
                 if (method_ == "POST" && content_length_ > 0)
@@ -442,7 +442,7 @@ ProcessResult HttpChannel::process(std::string &read_buffer)
         case PARSE_BODY:
         {
             if (!parse_body(read_buffer))
-                return ProcessResult::CONTINUE;
+                return ProcessResult::NEED_MORE;
             break;
         }
         default:

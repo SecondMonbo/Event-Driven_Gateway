@@ -249,5 +249,5 @@ ProcessResult SseHandler::process(std::string &read_buffer)
         }
     }
 
-    return ProcessResult::CONTINUE;
+    return ProcessResult::NEED_MORE;
 }

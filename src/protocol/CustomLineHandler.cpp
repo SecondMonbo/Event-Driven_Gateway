@@ -17,6 +17,12 @@ ProcessResult CustomLineHandler::process(std::string &read_buffer)
             return ProcessResult::CLOSE;
         };
     }
+
+    if (!read_buffer.empty())
+    {
+        return ProcessResult::NEED_MORE;
+    }
+
     return ProcessResult::CONTINUE;
 }
 
