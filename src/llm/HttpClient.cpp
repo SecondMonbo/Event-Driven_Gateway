@@ -10,7 +10,8 @@ bool HttpClient::post(
     std::function<void(const char *, size_t)> on_data,
     std::function<void(bool)> on_complete,
     long timeout_sec,
-    const std::unordered_map<std::string, std::string> &extra_headers)
+    const std::unordered_map<std::string, std::string> &extra_headers,
+    const std::atomic<bool> *canceled)
 {
     CURL *curl = curl_easy_init(); // 每次新建句柄
     if (!curl)
@@ -28,6 +29,14 @@ bool HttpClient::post(
     ctx.on_data = std::move(on_data);
     ctx.on_complete = std::move(on_complete);
     ctx.success = true;
+    ctx.canceled = canceled;
+
+    if (canceled)
+    {
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, progress_callback);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &ctx);
+    }
 
     // 设置 URL
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
@@ -117,4 +126,19 @@ size_t HttpClient::write_callback(char *ptr, size_t size, size_t nmemb, void *us
         ctx->on_data(ptr, total_size);
     }
     return total_size;
+}
+
+int HttpClient::progress_callback(void *clientp, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow)
+{
+    (void)dltotal;
+    (void)dlnow;
+    (void)ultotal;
+    (void)ulnow;
+
+    auto *ctx = static_cast<CallbackContext *>(clientp);
+    if (ctx && ctx->canceled && ctx->canceled->load())
+    {
+        return 1; // 非0 -> curl中止
+    }
+    return 0;
 }

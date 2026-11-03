@@ -3,7 +3,7 @@
 
 ConnectionContext::ConnectionContext(std::weak_ptr<ClientConnection> c,
                                      ThreadPool &tp,
-                                     TimerManager &tm, EpollLoop &l) : conn(c), thread_pool(tp), timer_manager(tm), loop(l) {}
+                                     TimerManager &tm, EpollLoop &l) : conn(c), thread_pool(tp), timer_manager(tm), loop(l), canceled(std::make_shared<std::atomic<bool>>(false)) {}
 
 bool ConnectionContext::send_data(const std::string &data) const
 {

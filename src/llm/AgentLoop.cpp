@@ -53,10 +53,11 @@ OutputCallback AgentLoop::make_emit_callback(const ConnectionContext &ctx)
     };
 }
 
-LLMCallResult AgentLoop::call_llm(const std::string &session_id, const std::string &message, bool enable_tools, OutputCallback emit)
+LLMCallResult AgentLoop::call_llm(const std::string &session_id, const std::string &message,
+                                  bool enable_tools, OutputCallback emit, const std::atomic<bool> *canceled)
 {
     state_ = AgentState::CALLING_LLM;
-    return llm_.call(session_id, message, enable_tools, emit);
+    return llm_.call(session_id, message, enable_tools, emit, canceled);
 }
 
 void AgentLoop::execute_tools(const std::vector<ToolCall> &calls, const std::string &session_id, OutputCallback emit, const std::string &reasoning_content)
@@ -95,15 +96,34 @@ void AgentLoop::execute_loop(const std::string &session_id, const std::string &m
     bool terminal_sent = false;
     try
     {
+        auto is_canceled = [&]()
+        {
+            return ctx.canceled && ctx.canceled->load();
+        };
+
         while (should_continue())
         {
+            if (is_canceled())
+            {
+                state_ = AgentState::CANCELED;
+                std::cerr << "[AgentLoop] canceled\n";
+                return;
+            }
+
             ++iteration_;
 
             // 第一轮携带用户消息；后续轮次 message 为空 (历史已包含)
             std::string current_message = (iteration_ == 1) ? message : "";
 
             // 1.调用 LLM
-            LLMCallResult result = call_llm(session_id, current_message, true, emit);
+            LLMCallResult result = call_llm(session_id, current_message, true, emit, ctx.canceled.get());
+
+            if (is_canceled() || result.canceled)
+            {
+                state_ = AgentState::CANCELED;
+                std::cerr << "[AgentLoop] canceled during LLM call\n";
+                return;
+            }
 
             if (!result.success)
             {
@@ -122,6 +142,13 @@ void AgentLoop::execute_loop(const std::string &session_id, const std::string &m
             if (result.has_tool_calls)
             {
                 execute_tools(result.tool_calls, session_id, emit, result.reasoning_content);
+
+                if (is_canceled())
+                {
+                    state_ = AgentState::CANCELED;
+                    return;
+                }
+
                 continue;
             }
 
@@ -129,6 +156,12 @@ void AgentLoop::execute_loop(const std::string &session_id, const std::string &m
             if (!result.content.empty())
             {
                 session_.append_message(session_id, ChatMessage("assistant", result.content));
+            }
+
+            if (is_canceled())
+            {
+                state_ = AgentState::CANCELED;
+                return;
             }
 
             state_ = AgentState::DONE;
@@ -167,7 +200,10 @@ void AgentLoop::run(const std::string &session_id, const std::string &message, c
 // 辅助
 bool AgentLoop::should_continue() const
 {
-    return iteration_ < MAX_ITERATIONS && state_ != AgentState::DONE && state_ != AgentState::ERROR;
+    return iteration_ < MAX_ITERATIONS &&
+           state_ != AgentState::DONE &&
+           state_ != AgentState::ERROR &&
+           state_ != AgentState::CANCELED;
 }
 
 void AgentLoop::set_error(const std::string &reason)

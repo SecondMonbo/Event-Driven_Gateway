@@ -14,8 +14,17 @@ LLMService::LLMService(SessionManager &session_manager,
                                                      tool_registry_(tool_regitry) {}
 
 // 主入口: 单次调用
-LLMCallResult LLMService::call(const std::string &session_id, const std::string &message, bool enable_tools, OutputCallback emit)
+LLMCallResult LLMService::call(const std::string &session_id, const std::string &message,
+                               bool enable_tools, OutputCallback emit, const std::atomic<bool> *canceled)
 {
+    if (canceled && canceled->load())
+    {
+        LLMCallResult r;
+        r.success = false;
+        r.canceled = true;
+        return r;
+    }
+
     // 目前仅支持本地 llama 和远端 deepseel_api,后期扩展可以抽象改为注入
     if (backend_ == ModelBackend::DEEPSEEK_API)
     {
@@ -102,7 +111,8 @@ std::string LLMService::build_request_body(const std::string &session_id, const 
     return request.dump();
 }
 // DeepSeek 调用
-LLMCallResult LLMService::call_deepseek(const std::string &session_id, const std::string &message, bool enable_tools, OutputCallback &emit)
+LLMCallResult LLMService::call_deepseek(const std::string &session_id, const std::string &message,
+                                        bool enable_tools, OutputCallback &emit, const std::atomic<bool> *canceled)
 {
     LLMCallResult result;
     std::string body = build_request_body(session_id, message, enable_tools);
@@ -158,7 +168,14 @@ LLMCallResult LLMService::call_deepseek(const std::string &session_id, const std
             result.success = success;
         },
         60, // timeout
-        headers);
+        headers,
+        canceled);
+
+    if (canceled && canceled->load())
+    {
+        result.success = false;
+        result.canceled = true;
+    }
 
     // 稳妥处理最后一块碎片
     if (!pending_line.empty())
@@ -206,13 +223,15 @@ LLMCallResult LLMService::call_deepseek(const std::string &session_id, const std
 }
 
 // 本地 llama.cpp 调用，因本地模型不支持 tool_calls，仅占位，后续实现
-LLMCallResult LLMService::call_llama(const std::string &session_id, const std::string &message, bool enable_tools, OutputCallback &emit)
+LLMCallResult LLMService::call_llama(const std::string &session_id, const std::string &message, bool enable_tools,
+                                     OutputCallback &emit, const std::atomic<bool> *canceled)
 {
     // 置void消除编译警告
     (void)session_id;
     (void)message;
     (void)enable_tools;
     (void)emit;
+    (void)canceled;
     // TODO: 与 call_deepseek 类似，只是 URL 和 header 不同
     LLMCallResult reslut;
     reslut.success = false;

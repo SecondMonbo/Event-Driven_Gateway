@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 #include <functional>
+#include <atomic>
 
 class ClientConnection;
 class TimerManager;
@@ -24,6 +25,8 @@ struct ConnectionContext
     ThreadPool &thread_pool;              // 提交异步任务
     TimerManager &timer_manager;          // 定时器操作
     EpollLoop &loop;                      // 主循环唤醒
+
+    std::shared_ptr<std::atomic<bool>> canceled;
 
     // 临时存储 /v1/chat 请求数据，用于升级后的 SseHandler 使用
     struct PendingLLMRequest

@@ -4,6 +4,7 @@
 #include <string>
 #include <functional>
 #include <memory>
+#include <atomic>
 
 /**
  * @brief 轻量级 HTTP 客户端封装 (基于libcurl)
@@ -57,7 +58,8 @@ public:
         std::function<void(const char *, size_t)> on_data,
         std::function<void(bool)> on_complete,
         long timeout_sec = 60,
-        const std::unordered_map<std::string, std::string> &extra_headers = {});
+        const std::unordered_map<std::string, std::string> &extra_headers = {},
+        const std::atomic<bool> *canceled = nullptr);
 
 private:
     // 内部上下文，用于在静态回调中传递用户数据
@@ -67,6 +69,7 @@ private:
         std::function<void(bool)> on_complete;
         bool success = true;
         std::string error_msg;
+        const std::atomic<bool> *canceled = nullptr;
     };
 
     // 静态回调函数（由libcurl调用）
@@ -74,4 +77,7 @@ private:
 
     // 辅助：设置通用选项
     void set_commom_options(const std::string &url);
+
+    static int progress_callback(void *clientp, curl_off_t dltotal, curl_off_t dlnow,
+                                 curl_off_t ultotal, curl_off_t ulnow);
 };

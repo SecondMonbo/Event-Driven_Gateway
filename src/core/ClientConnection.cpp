@@ -53,6 +53,9 @@ void ClientConnection::init_context(ConnectionContext::ChatHandler handler)
 
 ClientConnection::~ClientConnection()
 {
+    if (ctx_ && ctx_->canceled)
+        ctx_->canceled->store(true);
+
     if (fd_ != -1)
         close(fd_);
 }
@@ -177,6 +180,9 @@ bool ClientConnection::on_readable()
 
 void ClientConnection::close_connection()
 {
+    if (ctx_ && ctx_->canceled)
+        ctx_->canceled->store(true);
+
     if (fd_ != -1)
     {
         close(fd_);

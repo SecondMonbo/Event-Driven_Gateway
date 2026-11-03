@@ -25,6 +25,7 @@ enum class AgentState
     CALLING_LLM,     // 正在调用 LLM
     EXECUTING_TOOLS, // 正在执行工具
     DONE,            // 正常结束
+    CANCELED,        // 用户断开连接，任务取消
     ERROR            // 出错
 };
 
@@ -110,7 +111,8 @@ private:
     LLMCallResult call_llm(const std::string &session_id,
                            const std::string &message,
                            bool enable_tools,
-                           OutputCallback emit);
+                           OutputCallback emit,
+                           const std::atomic<bool> *canceled = nullptr);
 
     /**
      * @brief  执行工具调用

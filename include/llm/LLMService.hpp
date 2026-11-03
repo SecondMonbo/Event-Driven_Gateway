@@ -46,7 +46,8 @@ struct LLMCallResult
     std::string content;           // 累积的最终回答
     std::string reasoning_content; // 累计思考过程
     bool success = true;
-    std::string error; // 失败原因
+    std::string error;     // 失败原因
+    bool canceled = false; // 任务流程令牌
 };
 
 /**
@@ -98,7 +99,8 @@ public:
     LLMCallResult call(const std::string &session_id,
                        const std::string &message,
                        bool enable_tools,
-                       OutputCallback emit);
+                       OutputCallback emit,
+                       const std::atomic<bool> *canceled = nullptr);
 
 private:
     // 依赖
@@ -114,12 +116,14 @@ private:
     LLMCallResult call_deepseek(const std::string &session_id,
                                 const std::string &message,
                                 bool enable_tools,
-                                OutputCallback &emit);
+                                OutputCallback &emit,
+                                const std::atomic<bool> *canceled = nullptr);
 
     LLMCallResult call_llama(const std::string &session_id,
                              const std::string &message,
                              bool enable_tools,
-                             OutputCallback &emit);
+                             OutputCallback &emit,
+                             const std::atomic<bool> *canceled = nullptr);
 
     std::string build_request_body(const std::string &session_id,
                                    const std::string &message,
